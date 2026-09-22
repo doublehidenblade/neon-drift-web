@@ -1,0 +1,318 @@
+{
+  "generated": "p3d-032 rebuild it3 2026-09-21 (canvas bridge-moon deleted; mountains-night smudge re-patched)",
+  "note": "AI-generated art (media pipeline), NOT designer-drawn. See hidden_files/art32/TECHNIQUE.md",
+  "assets": [
+    {
+      "file": "assets32/tile-road-night.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 28698
+    },
+    {
+      "file": "assets32/tile-grass-night.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 58038
+    },
+    {
+      "file": "assets32/tile-dirt-night.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 48538
+    },
+    {
+      "file": "assets32/tile-concrete-night.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 54854
+    },
+    {
+      "file": "assets32/tile-water-night.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 55070
+    },
+    {
+      "file": "assets32/tile-tunnel-wall.webp",
+      "size": [
+        512,
+        512
+      ],
+      "bytes": 32694
+    },
+    {
+      "file": "assets32/sky-night-band.webp",
+      "size": [
+        2048,
+        670
+      ],
+      "bytes": 132852
+    },
+    {
+      "file": "assets32/player-steer-left.webp",
+      "size": [
+        560,
+        239
+      ],
+      "bytes": 21986
+    },
+    {
+      "file": "assets32/player-steer-right.webp",
+      "size": [
+        560,
+        239
+      ],
+      "bytes": 22102
+    },
+    {
+      "file": "assets32/car-sedan.webp",
+      "size": [
+        380,
+        288
+      ],
+      "bytes": 19908
+    },
+    {
+      "file": "assets32/car-taxi.webp",
+      "size": [
+        379,
+        303
+      ],
+      "bytes": 22388
+    },
+    {
+      "file": "assets32/car-van.webp",
+      "size": [
+        380,
+        334
+      ],
+      "bytes": 17324
+    },
+    {
+      "file": "assets32/car-sport.webp",
+      "size": [
+        380,
+        235
+      ],
+      "bytes": 14834
+    },
+    {
+      "file": "assets32/tree-pine.webp",
+      "size": [
+        436,
+        560
+      ],
+      "bytes": 73832
+    },
+    {
+      "file": "assets32/tree-broad.webp",
+      "size": [
+        600,
+        560
+      ],
+      "bytes": 50058
+    },
+    {
+      "file": "assets32/cone.webp",
+      "size": [
+        192,
+        260
+      ],
+      "bytes": 10364
+    },
+    {
+      "file": "assets32/barricade.webp",
+      "size": [
+        298,
+        260
+      ],
+      "bytes": 25332
+    },
+    {
+      "file": "assets32/nitro-bottle.webp",
+      "size": [
+        196,
+        260
+      ],
+      "bytes": 14692
+    },
+    {
+      "file": "assets32/lamp-night.webp",
+      "size": [
+        398,
+        560
+      ],
+      "bytes": 32386
+    },
+    {
+      "file": "assets32/gantry-night.webp",
+      "size": [
+        1280,
+        435
+      ],
+      "bytes": 88720
+    },
+    {
+      "file": "assets32/kanban-night.webp",
+      "size": [
+        413,
+        520
+      ],
+      "bytes": 46380
+    },
+    {
+      "file": "assets32/bridge-tower-night.webp",
+      "size": [
+        391,
+        700
+      ],
+      "bytes": 79580
+    },
+    {
+      "file": "assets32/player-rear.webp",
+      "size": [
+        560,
+        403
+      ],
+      "bytes": 25712
+    },
+    {
+      "file": "assets32/guardrail-seg.webp",
+      "size": [
+        899,
+        201
+      ],
+      "bytes": 23360
+    },
+    {
+      "file": "assets32/skyline-night.webp",
+      "size": [
+        2048,
+        682
+      ],
+      "bytes": 261872
+    },
+    {
+      "file": "assets32/mountains-night.webp",
+      "size": [
+        2048,
+        670
+      ],
+      "bytes": 104710
+    },
+    {
+      "file": "assets32/tunnel-hill-night.webp",
+      "size": [
+        2048,
+        670
+      ],
+      "bytes": 152852
+    },
+    {
+      "file": "assets32/tunnel-portal-night.webp",
+      "size": [
+        1024,
+        335
+      ],
+      "bytes": 61760
+    },
+    {
+      "file": "assets32/bridge-vista-night.webp",
+      "size": [
+        2048,
+        670
+      ],
+      "bytes": 112958
+    },
+    {
+      "file": "assets32/facade-snow-2.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 179738
+    },
+    {
+      "file": "assets32/torii-night.webp",
+      "size": [
+        1280,
+        1920
+      ],
+      "bytes": 75616
+    },
+    {
+      "file": "assets32/facade-night-1.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 162260
+    },
+    {
+      "file": "assets32/facade-night-2.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 157396
+    },
+    {
+      "file": "assets32/facade-night-3.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 144808
+    },
+    {
+      "file": "assets32/facade-night-4.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 185028
+    },
+    {
+      "file": "assets32/facade-shop-1.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 197098
+    },
+    {
+      "file": "assets32/facade-shop-2.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 187942
+    },
+    {
+      "file": "assets32/facade-snow-1.webp",
+      "size": [
+        1024,
+        683
+      ],
+      "bytes": 167982
+    },
+    {
+      "file": "assets32/moon-night.webp",
+      "size": [
+        400,
+        400
+      ],
+      "bytes": 29104
+    }
+  ]
+}

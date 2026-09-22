@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>NEON DRIFT — Web Build</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#050510;overflow:hidden;overscroll-behavior:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#050510}
+  #game{display:block;touch-action:none;-webkit-user-select:none;user-select:none}
+  .hud{position:fixed;pointer-events:none;font-family:ui-monospace,Menlo,Consolas,monospace;color:#fff;z-index:5}
+  #topbar{top:calc(8px + env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;font-size:15px;font-weight:700;text-shadow:0 2px 4px #000}
+  #topbar .dim{opacity:.75;font-weight:400}
+  #nitrobar{bottom:calc(96px + env(safe-area-inset-bottom));left:14px;width:120px;height:10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);border-radius:5px;overflow:hidden}
+  #nitrofill{height:100%;width:0%;background:linear-gradient(90deg,#53B5F9,#9fe0ff)}
+  #hearts{bottom:calc(112px + env(safe-area-inset-bottom));left:14px;font-size:18px;letter-spacing:2px;text-shadow:0 2px 4px #000}
+  #msg{top:34%;left:0;right:0;text-align:center;font-size:64px;font-weight:900;letter-spacing:4px;text-shadow:0 4px 18px #000;display:none}
+  #submsg{top:calc(34% + 84px);left:0;right:0;text-align:center;font-size:20px;font-weight:700;text-shadow:0 2px 8px #000;display:none}
+  #banner{top:calc(132px + env(safe-area-inset-top));left:0;right:0;text-align:center;font-size:26px;font-weight:900;letter-spacing:8px;text-shadow:0 2px 12px #000;opacity:0;transition:opacity .4s}
+  #nitrobtn{position:fixed;right:18px;bottom:calc(90px + env(safe-area-inset-bottom));width:84px;height:84px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#9fe0ff,#1e6fd9 70%);border:3px solid rgba(255,255,255,.7);
+    color:#fff;font-family:inherit;font-weight:900;font-size:14px;z-index:6;display:none;touch-action:none;opacity:.45}
+  #nitrobtn:active{transform:scale(.93)}
+  #nitrobtn.ready{opacity:1;box-shadow:0 0 22px rgba(74,226,255,.9);animation:nitropulse 0.9s infinite alternate}
+  @keyframes nitropulse{from{box-shadow:0 0 12px rgba(74,226,255,.5)}to{box-shadow:0 0 30px rgba(74,226,255,1)}}
+  /* p3d-020 (BUG-050): pause button, top-right during racing (below LAP/POS) */
+  #pausebtn{position:fixed;top:calc(64px + env(safe-area-inset-top));right:14px;z-index:6;
+    width:44px;height:44px;border-radius:12px;border:2px solid rgba(255,255,255,.5);
+    background:rgba(10,10,25,.55);color:#fff;font-family:inherit;font-weight:900;font-size:16px;
+    pointer-events:auto;cursor:pointer}
+  #pausebtn:active{transform:scale(.93)}
+  /* p3d-020 (BUG-050): settings sliders */
+  .trow{margin:10px 0}
+  .trow label{display:flex;justify-content:space-between;font-size:12px;letter-spacing:1px;
+    font-weight:700;color:#dfe3ee;margin-bottom:4px;pointer-events:none}
+  .trow label .tval{color:#ffdd46}
+  .trow label span:first-child{max-width:68%}
+  .trow input[type=range]{width:100%;pointer-events:auto;cursor:pointer;accent-color:#ff2a5a}
+  #tuneoutput{width:100%;height:72px;box-sizing:border-box;margin-top:10px;resize:none;padding:8px;
+    border:1px solid rgba(255,255,255,.25);border-radius:6px;background:rgba(0,0,0,.35);color:#9fe0ff;font:10px ui-monospace,monospace}
+  /* p3d-011: bigger tap target on touch phones (Craig 2026-09-20: nitro hard to fire) */
+  @media (pointer:coarse){
+    #nitrobtn{width:108px;height:108px;font-size:16px;right:20px;bottom:calc(110px + env(safe-area-inset-bottom))}
+  }
+  #devbtn{pointer-events:auto;cursor:pointer;margin-top:14px;font-size:13px;font-weight:700;letter-spacing:2px;
+    padding:10px 26px;border:2px solid rgba(74,226,255,.6);border-radius:10px;color:#4ae2ff;background:rgba(74,226,255,.08)}
+  #devlog{justify-content:flex-start;padding:18px 14px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  #devlog .dhead{font-size:22px;letter-spacing:4px;color:#4ae2ff;margin:6px 0 2px;font-weight:900}
+  #devlog .dsub{font-size:11px;opacity:.6;margin-bottom:8px}
+  .dentry{text-align:left;width:100%;max-width:560px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
+    padding:10px 12px;margin:8px 0;background:rgba(255,255,255,.04)}
+  .dentry .dv{font-size:13px;font-weight:900;color:#ffdd46;letter-spacing:1px}
+  .dentry .dt{font-size:12px;font-weight:700;color:#fff;margin:4px 0}
+  .dentry .dsec{font-size:10px;letter-spacing:2px;color:#4ae2ff;margin:8px 0 3px}
+  .dentry ul{margin:2px 0;padding-left:16px;font-size:11px;line-height:1.5;color:#dfe3ee}
+  .dentry .dshots{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .dentry figure{margin:0;width:31%}
+  .dentry img{width:100%;border-radius:6px;border:1px solid rgba(255,255,255,.2);display:block}
+  .dentry figcaption{font-size:9px;opacity:.65;margin-top:2px;line-height:1.3}
+  #devclose{pointer-events:auto;cursor:pointer;margin:14px 0 26px;font-size:15px;font-weight:900;letter-spacing:3px;
+    padding:12px 40px;border:none;border-radius:10px;color:#fff;background:#1e6fd9}
+  .overlay{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(5,5,16,.82);backdrop-filter:blur(3px);font-family:ui-monospace,Menlo,Consolas,monospace;color:#fff;text-align:center;padding:20px}
+  .overlay h1{font-size:42px;letter-spacing:6px;margin:0 0 6px;color:#ff2a5a;text-shadow:0 0 24px rgba(255,42,90,.6)}
+  .overlay h2{font-size:15px;letter-spacing:3px;opacity:.7;margin:0 0 22px;font-weight:400}
+  #settings{justify-content:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .sect{font-size:12px;letter-spacing:3px;opacity:.6;margin:16px 0 8px}
+  .opts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:420px}
+  .opt{pointer-events:auto;cursor:pointer;border:2px solid rgba(255,255,255,.25);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;color:#fff;background:rgba(255,255,255,.06)}
+  .opt.sel{border-color:#ff2a5a;background:rgba(255,42,90,.18);box-shadow:0 0 14px rgba(255,42,90,.35)}
+  .opt small{display:block;font-weight:400;opacity:.65;font-size:11px;margin-top:3px}
+  #startbtn{pointer-events:auto;cursor:pointer;margin-top:26px;font-size:20px;font-weight:900;letter-spacing:4px;
+    padding:16px 54px;border:none;border-radius:14px;color:#fff;background:linear-gradient(180deg,#ff2a5a,#b3123a);
+    box-shadow:0 6px 30px rgba(255,42,90,.5)}
+  #startbtn:active{transform:scale(.96)}
+  #finishstats{font-size:16px;line-height:2;margin:10px 0 0}
+  @media (max-height:500px) {
+    .overlay{padding:10px;overflow:auto;justify-content:flex-start}
+    .overlay h1{font-size:24px;margin:0 0 3px}
+    .overlay h2{font-size:11px;margin:0 0 6px}
+    .sect{margin:6px 0 4px;font-size:10px;letter-spacing:1px}
+    .opts{max-width:none}
+    .opt{padding:6px 10px;font-size:11px}
+    .opt small{font-size:9px}
+    #startbtn{margin-top:10px;padding:10px 36px;font-size:16px}
+    #devbtn{padding:6px 20px}
+    #nitrobtn{width:64px;height:64px;bottom:18px;right:18px;font-size:12px}
+    #title>.sect:nth-last-child(-n+3){margin-top:5px!important;margin-bottom:0}
+  }
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div class="hud" id="banner"></div>
+
+<div class="overlay" id="title">
+  <h1>NEON DRIFT</h1>
+  <h2>TOKYO NIGHT &bull; 3 LAPS</h2>
+  <div class="sect">MACHINE</div>
+  <div class="opts" id="caropts"></div>
+  <div class="sect">TRACK</div>
+  <div class="opts" id="trackopts"></div>
+  <button id="startbtn">START RACE</button>
+  <button id="devbtn" style="margin-top:10px">DEV LOG</button>
+  <div class="sect" style="margin-top:18px">ARROWS / WASD: STEER &bull; SPACE: DRIFT &bull; N: NITRO &bull; R: RESTART</div>
+  <div class="sect" style="margin-top:6px;opacity:.45">TOUCH: HOLD LEFT / RIGHT HALF OF SCREEN TO STEER</div>
+  <div class="sect" style="margin-top:6px;opacity:.45">AI-GENERATED SPRITE ART • CANVAS ROAD ENGINE</div>
+</div>
+<div class="overlay hidden" id="devlog"></div>
+
+<div class="overlay hidden" id="finish">
+  <h1 id="finishpos">1ST</h1>
+  <h2>RACE FINISHED</h2>
+  <div id="finishstats"></div>
+  <button id="startbtn2" class="opt" style="pointer-events:auto;margin-top:26px;font-size:18px;padding:14px 44px;border:none">RACE AGAIN</button>
+</div>
+
+<div class="overlay hidden" id="gameover">
+  <h1>WRECKED</h1>
+  <h2>OUT OF HEARTS</h2>
+  <div id="gostats" style="font-size:16px;line-height:2;margin:10px 0 0"></div>
+  <button id="startbtn3" class="opt" style="pointer-events:auto;margin-top:26px;font-size:18px;padding:14px 44px;border:none">RETRY</button>
+</div>
+
+<button id="nitrobtn">NITRO</button>
+<button id="pausebtn" class="hidden">II</button>
+
+<div class="overlay hidden" id="pause">
+  <h1>PAUSED</h1>
+  <h2>TAKE A BREATHER</h2>
+  <button id="resumebtn" class="opt" style="pointer-events:auto;margin-top:10px;font-size:18px;padding:14px 44px;border:none">RESUME</button>
+  <button id="settingsbtn" class="opt" style="pointer-events:auto;margin-top:12px;font-size:18px;padding:14px 44px">SETTINGS</button>
+  <button id="quitbtn" class="opt" style="pointer-events:auto;margin-top:12px;font-size:14px;padding:10px 30px;opacity:.7">QUIT TO TITLE</button>
+</div>
+
+<div class="overlay hidden" id="settings">
+  <h1 style="font-size:30px">SETTINGS</h1>
+  <h2>CONTROLS MARKED LIVE APPLY NOW &bull; NEXT RACE APPLIES ON RESTART</h2>
+  <div id="tunesliders" style="width:100%;max-width:420px;text-align:left"></div>
+  <textarea id="tuneoutput" readonly aria-label="COPY THIS CONFIG AFTER PLAYTESTING"></textarea>
+  <button id="copytune" class="opt" style="pointer-events:auto;margin-top:8px;font-size:12px;padding:8px 20px">COPY CONFIG</button>
+  <button id="settingsback" class="opt" style="pointer-events:auto;margin-top:18px;font-size:18px;padding:14px 44px;border:none">BACK</button>
+</div>
+
+<script src="changelog-data.js?v=117"></script>
+<script src="game.js?v=119"></script>
+<script src="renderer.js?v=119"></script>
+<script src="qa.js?v=117"></script>
+</body>
+</html>
