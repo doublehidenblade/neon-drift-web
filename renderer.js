@@ -5,7 +5,8 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, secondaryRoadSegments:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneFaceArt = new Map();
 let sceneLampArt = null;
 function lampSprite(){
   if(sceneLampArt)return sceneLampArt;
@@ -45,12 +46,18 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
     if (key === 'kanban-night') c.globalAlpha = .78 + .22*Math.sin(G.time*3 + rel*.04);
     if (crop) c.drawImage(im, ...crop, -sw/2, -sh, sw, sh); else c.drawImage(im,-sw/2,-sh,sw,sh);
     c.restore();
-  } else if (options?.shear || options?.flip) {
-    c.save();c.translate(p.x,p.y);c.transform(options.flip?-1:1,0,options.shear||0,1,0,0);
+  } else if (options?.shear || options?.flip || options?.rotate) {
+    c.save();c.translate(p.x,p.y);
+    if(options.rotate)c.rotate(options.rotate);
+    c.transform(options.flip?-1:1,0,options.shear||0,1,0,0);
     if(crop)c.drawImage(im,...crop,-sw/2,-sh,sw,sh);else c.drawImage(im,-sw/2,-sh,sw,sh);
     if(key.startsWith('car-')){c.fillStyle='#283041';c.fillRect(-sw*.13,-sh*.39,sw*.26,sh*.105);}
     c.restore();
     if(options.shear)sceneEffectsStats.shearedCars++;
+    if(options.rotate&&key.startsWith('car-')){
+      sceneEffectsStats.rotatedCars++;
+      sceneEffectsStats.maxTrafficRotation=Math.max(sceneEffectsStats.maxTrafficRotation,Math.abs(options.rotate));
+    }
   } else if (crop) c.drawImage(im, ...crop, x, y, sw, sh);
   else c.drawImage(im, x, y, sw, sh);
   sceneStats.sprites++;
@@ -69,6 +76,21 @@ function sceneQuad(c, points, color) {
   c.closePath(); c.fillStyle = color; c.fill();
 }
 function sceneQuadAlpha(c,points,color,alpha){if(alpha<=.001)return;c.save();c.globalAlpha=alpha;sceneQuad(c,points,color);c.restore();}
+// Dense roadside faces need authored pixels but not the two clipped affine
+// draws used by road strips. Clip one scaled image draw to the projected face;
+// this keeps the art, opacity and world corners while bounding city cost.
+function texturedFace(c,key,points){
+  const im=ART[key];if(!imgReady(im))return;
+  // The inherited paintings are much larger than these narrow projected
+  // returns. Cache a small authored mip once instead of resampling a 1024 px
+  // source for every building on every frame.
+  let source=sceneFaceArt.get(key);
+  if(!source){source=document.createElement('canvas');source.width=source.height=64;source.getContext('2d').drawImage(im,0,0,64,64);sceneFaceArt.set(key,source);}
+  const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+  const x=Math.min(...xs),y=Math.min(...ys),w=Math.max(1,Math.max(...xs)-x),h=Math.max(1,Math.max(...ys)-y);
+  c.save();c.beginPath();c.moveTo(...points[0]);for(let i=1;i<points.length;i++)c.lineTo(...points[i]);c.closePath();c.clip();
+  c.drawImage(source,x,y,w,h);c.restore();
+}
 function scenePresence(weight,seed){
   // Physical scenery stays opaque. A stable spatial threshold changes its
   // density through a handoff instead of turning buildings into ghosts.
@@ -178,11 +200,22 @@ function sceneBuilding(c, frontKey, sideKey, rel, lateral, width, height, depth,
   // the clipped quad mapper.
   sceneSprite(c,frontKey,rel,lateral,width,height);
   const roadFace=side<0 ? [[ft1.x,ft1.y],[bt1.x,bt1.y],[b1.x,b1.y],[f1.x,f1.y]] : [[bt0.x,bt0.y],[ft0.x,ft0.y],[f0.x,f0.y],[b0.x,b0.y]];
-  // The painted facade carries the architecture; the return is a restrained
-  // shaded mass rather than a procedural window grid. This keeps dozens of
-  // moving volumes within the established render budget.
-  sceneQuad(c,roadFace,'#1f2a3f');
-  sceneQuad(c,[[bt0.x,bt0.y],[bt1.x,bt1.y],[ft1.x,ft1.y],[ft0.x,ft0.y]],'#2a3143');
+  // p3d-040: the return and roof are authored surfaces too. The sideKey was
+  // previously passed in but never used, leaving a flat Canvas slab beside an
+  // otherwise painted facade. Perspective-map the actual facade onto the road
+  // face and an opaque concrete texture onto the roof; only the hidden ground
+  // footprint remains a solid fill.
+  const roofFace=[[bt0.x,bt0.y],[bt1.x,bt1.y],[ft1.x,ft1.y],[ft0.x,ft0.y]];
+  if(rel<180){
+    texturedFace(c,imgReady(ART[sideKey])?sideKey:frontKey,roadFace);
+    texturedFace(c,'tile-concrete-night',roofFace);
+    sceneEffectsStats.texturedBuildingFaces+=2;
+  }else{
+    // Beyond this depth the painted texels collapse below a pixel. Preserve
+    // the authored near-field treatment and use its restrained backing tones
+    // instead of paying clip/image cost for invisible detail.
+    sceneQuad(c,roadFace,'#1f2a3f');sceneQuad(c,roofFace,'#2a3143');
+  }
   c.fillStyle='#090c13'; c.beginPath(); c.moveTo(f0.x,f0.y); c.lineTo(f1.x,f1.y); c.lineTo(b1.x,b1.y); c.lineTo(b0.x,b0.y); c.closePath(); c.fill();
   sceneEffectsStats.opaqueWorldFaces+=3;
 }
@@ -273,7 +306,9 @@ function sceneHighWallJobs() {
       c.globalAlpha=1;
       const fb=projectSprite(r1,side*1.18,0), nb=projectSprite(r0,side*1.18,0);
       const ft=projectSprite(r1,side*1.18,-.38), nt=projectSprite(r0,side*1.18,-.38);
-      sceneQuad(c,[[ft.x,ft.y],[nt.x,nt.y],[nb.x,nb.y],[fb.x,fb.y]],'#252b35');
+      const wallFace=[[ft.x,ft.y],[nt.x,nt.y],[nb.x,nb.y],[fb.x,fb.y]];
+      if(r0<200){texturedFace(c,'tile-concrete-night',wallFace);sceneEffectsStats.texturedWallFaces++;}
+      else sceneQuad(c,wallFace,'#252b35');
       c.strokeStyle='#59606d';c.lineWidth=Math.max(1,nb.w*.003);c.beginPath();c.moveTo(ft.x,ft.y);c.lineTo(fb.x,fb.y);c.stroke();
       c.strokeStyle='#0c0f16'; c.lineWidth=Math.max(1,nb.w*.006); c.beginPath(); c.moveTo(ft.x,ft.y);c.lineTo(nt.x,nt.y);c.stroke();
       sceneEffectsStats.opaqueWorldFaces++;
@@ -312,16 +347,34 @@ function sceneCrossroadJobs(){
 
 function sceneSecondaryHighwayJobs(){
   for(const side of [-1,1]){
+    // Keep the near road at the shared 20 m resolution, then merge the final
+    // horizon stretch into longer projected slabs. At that depth the joins
+    // collapse to only a few pixels, so extra 20 m jobs add no visible detail
+    // and can push busy city frames beyond the bounded render queue.
     for(let rel=20;rel<1200;rel+=SEG_LEN){pushJob(rel,c=>{
       const visibility=sceneWeights(G.playerDist+rel).city;if(visibility<.08)return;
-      const a=projectSprite(rel,side*3.35,0),b=projectSprite(rel+SEG_LEN,side*3.35,0);
+      // The final quad continues to the 1.6 km horizon in one piece; its far
+      // joins would be sub-pixel, so subdividing it only bloats the job queue.
+      const span=rel===1180?420:SEG_LEN;
+      const a=projectSprite(rel,side*3.35,0),b=projectSprite(rel+span,side*3.35,0);
       const aw=a.w*.42,bw=b.w*.42;
       sceneQuad(c,[[b.x-bw,b.y],[b.x+bw,b.y],[a.x+aw,a.y],[a.x-aw,a.y]],'#191f2a');
       c.strokeStyle='#d0c8a7';c.lineWidth=Math.max(1,a.w*.006);c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();
       sceneEffectsStats.secondaryRoadSegments++;
     });}
-    const carRel=35+((G.raceTime*24+(side>0?480:0))%1080);
-    pushJob(carRel,c=>{const visibility=sceneWeights(G.playerDist+carRel).city;if(visibility<.08)return;sceneSprite(c,side<0?'car-van':'car-sedan',carRel,side*3.35,.42,null,null,{maxScreenWidth:playerWpx()*.72});});
+    // p3d-040: traffic traverses a full far-to-behind-camera lifecycle. The
+    // wrap happens while the car is already invisible, so it never teleports
+    // from the far horizon straight into the near field.
+    const cycle=1650,phase=((G.raceTime*24+(side>0?825:0))%cycle+cycle)%cycle;
+    const carRel=1500-phase;
+    sceneEffectsStats.secondaryTrafficMinRel=Math.min(sceneEffectsStats.secondaryTrafficMinRel,carRel);
+    sceneEffectsStats.secondaryTrafficMaxRel=Math.max(sceneEffectsStats.secondaryTrafficMaxRel,carRel);
+    if(carRel>2&&carRel<1600)pushJob(carRel,c=>{
+      const visibility=sceneWeights(G.playerDist+carRel).city;if(visibility<.08)return;
+      sceneSprite(c,side<0?'car-van':'car-sedan',carRel,side*3.35,.42,null,null,{
+        rotate:trafficTravelAngle(carRel,side*3.35),maxScreenWidth:playerWpx()*.72
+      });
+    });
   }
 }
 
@@ -445,7 +498,18 @@ function sceneTunnelJobs() {
       texturedQuad(c,im,[[ir.x,it.y],[or.x,ot.y],[or.x,or.y],[ir.x,ir.y]]);
       texturedQuad(c,roof,[[ol.x,ot.y],[or.x,ot.y],[ir.x,it.y],[il.x,it.y]]);
       const wl=projectSprite(rel,-3.2,0),wr=projectSprite(rel,3.2,0);
-      sceneQuad(c,[[wl.x,wl.y],[ol.x,ot.y],[ol.x,ol.y]],'#242a31');sceneQuad(c,[[or.x,ot.y],[wr.x,wr.y],[or.x,or.y]],'#242a31');
+      const wlt=projectSprite(rel,-3.2,-1.55),wrt=projectSprite(rel,3.2,-1.55);
+      const portal=ART['tunnel-portal-night'];
+      const leftWing=[[wlt.x,wlt.y],[ol.x,ot.y],[ol.x,ol.y],[wl.x,wl.y]];
+      const rightWing=[[or.x,ot.y],[wrt.x,wrt.y],[wr.x,wr.y],[or.x,or.y]];
+      if(imgReady(portal)){
+        const pw=portal.naturalWidth,ph=portal.naturalHeight;
+        texturedQuad(c,portal,leftWing,[0,0,pw*.38,ph]);
+        texturedQuad(c,portal,rightWing,[pw*.62,0,pw*.38,ph]);
+      }else{
+        texturedQuad(c,im,leftWing);texturedQuad(c,im,rightWing);
+      }
+      sceneEffectsStats.portalTexturedFaces+=2;
     });}
   }
 }

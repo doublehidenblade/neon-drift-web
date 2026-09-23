@@ -921,15 +921,24 @@ function rivalDist(i) {
   const gap = Math.max(25, (passAt - G.playerDist) * 0.12);
   return G.playerDist + gap;
 }
+function trafficTravelAngle(rel,lateral) {
+  // p3d-040: a rear-view car sprite's forward axis is screen-up. Rotate that
+  // axis onto the projected road tangent instead of shearing the body, which
+  // distorted the silhouette without actually making it face its travel path.
+  const p0=projectSprite(rel,lateral,0),p1=projectSprite(rel+18,lateral,0);
+  const dx=p1.x-p0.x,dy=p0.y-p1.y;
+  // A rear-view painting can only suggest yaw; applying the full screen-space
+  // tangent reads as the car rolling onto two wheels on sharper bends. Keep
+  // the travel-direction cue restrained until dedicated yaw frames exist.
+  return clamp(Math.atan2(dx,Math.max(1,dy)),-.12,.12);
+}
 function rivalJobs() {
   G.rivals.forEach((r, i) => {
     const rel = rivalDist(i) - G.playerDist;
     if (rel < RIVAL_PASS_REL || rel > 1800) return;
     const cars = ['car-sport','car-sedan','car-taxi','car-van'];
-    const perspective=clamp(1-rel/420,0,1);
-    const tangent=(projectSprite(rel+12,r.x,0).x-projectSprite(rel,r.x,0).x)/Math.max(1,projectSprite(rel,r.x,0).w);
     pushJob(rel, c => sceneSprite(c, cars[i % cars.length], rel, r.x, 0.5, null, null,
-      { shear: clamp(r.x * (.08+.24*perspective)+tangent, -.38, .38), maxScreenWidth:playerWpx()*.92 }));
+      { rotate: trafficTravelAngle(rel,r.x), maxScreenWidth:playerWpx()*.92 }));
   });
 }
 function playerPos() {
@@ -1089,12 +1098,11 @@ function checkRivalBump(dt) {
   }
 }
 function drawTrafficCar(o, rel, fade) {
-  const tangent=(projectSprite(rel+12,o.lane,0).x-projectSprite(rel,o.lane,0).x)/Math.max(1,projectSprite(rel,o.lane,0).w);
   const maxWidth=playerWpx()*.92;
   const projected=projectSprite(rel,o.lane,0).w*.5;
   sceneEffectsStats.maxTrafficPlayerRatio=Math.max(sceneEffectsStats.maxTrafficPlayerRatio,projected>0?Math.min(projected,maxWidth)/playerWpx():0);
   return c => sceneSprite(c, ['car-sedan','car-taxi','car-van','car-sport'][Math.abs(o.seed) % 4], rel,
-    o.lane, 0.5, null, null, { shear: clamp(o.lane*(.08+.24*clamp(1-rel/420,0,1))+tangent,-.38,.38), maxScreenWidth:maxWidth });
+    o.lane, 0.5, null, null, { rotate:trafficTravelAngle(rel,o.lane), maxScreenWidth:maxWidth });
 }
 function drawBarrier(o, rel, fade) {
   return c => sceneSprite(c, 'barricade', rel, o.lane, 0.70);
@@ -1590,7 +1598,7 @@ function frame(now) {
 
 function render() {
   if (!artReady) return;
-  Object.keys(sceneEffectsStats).forEach(k=>sceneEffectsStats[k]=(k==='bridgeMemberMinPx'||k==='treeWorldGap')?999:0);
+  Object.keys(sceneEffectsStats).forEach(k=>sceneEffectsStats[k]=(k==='bridgeMemberMinPx'||k==='treeWorldGap'||k==='secondaryTrafficMinRel')?999:(k==='secondaryTrafficMaxRel'?-999:0));
   const env = getEnv(G.playerDist);
   projectFrame();
   ctx.save();
@@ -1870,8 +1878,8 @@ if (HARNESS) {
   window.__tdWorldEffects = () => ({...sceneEffectsStats});
   window.__tdVisualState = () => ({
     playerWidth: +playerWpx().toFixed(2), laneWidth: +(roadHalfPxAtCar()*2/3).toFixed(2),
-    trafficOrientation: 'travel-tangent', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
-    trafficMaxPlayerRatio: .92, secondaryRoadRange: [20,1200],
+    trafficOrientation: 'travel-rotation', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
+    trafficMaxPlayerRatio: .92, secondaryRoadRange: [20,1600], secondaryTrafficLifecycle: [-150,1500],
     opponents: G.rivals.length, particles: G.sparks.length, skids:G.skids.length,
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
