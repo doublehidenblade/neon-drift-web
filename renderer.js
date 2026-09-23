@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, secondaryRoadSegments:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
 let sceneLampArt = null;
 function lampSprite(){
   if(sceneLampArt)return sceneLampArt;
@@ -22,8 +22,9 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
   const im = key==='lamp-night' ? lampSprite() : ART[key];
   if (!imgReady(im)) return;
   const p = projectSprite(rel, lateral, 0);
-  const sw = p.w * width;
-  const sh = height === null ? sw * im.naturalHeight / im.naturalWidth : p.scale * PROJ_H * Y_FACTOR * height;
+  let sw = p.w * width;
+  let sh = height === null ? sw * im.naturalHeight / im.naturalWidth : p.scale * PROJ_H * Y_FACTOR * height;
+  if(options?.maxScreenWidth && sw>options.maxScreenWidth){const ratio=options.maxScreenWidth/sw;sw*=ratio;sh*=ratio;}
   const x = p.x - sw / 2, y = p.y - sh;
   if (![x, y, sw, sh].every(Number.isFinite)) { sceneStats.invalid++; return; }
   if (sw < 1 || sh < 1 || x > W || x + sw < 0 || y > H || y + sh < 0) { sceneStats.culled++; return; }
@@ -180,9 +181,10 @@ function sceneBuilding(c, frontKey, sideKey, rel, lateral, width, height, depth,
   // The painted facade carries the architecture; the return is a restrained
   // shaded mass rather than a procedural window grid. This keeps dozens of
   // moving volumes within the established render budget.
-  sceneQuad(c,roadFace,'rgba(31,42,63,.96)');
-  sceneQuad(c,[[bt0.x,bt0.y],[bt1.x,bt1.y],[ft1.x,ft1.y],[ft0.x,ft0.y]],'rgba(42,49,67,.94)');
-  c.fillStyle='rgba(2,4,9,.62)'; c.beginPath(); c.moveTo(f0.x,f0.y); c.lineTo(f1.x,f1.y); c.lineTo(b1.x,b1.y); c.lineTo(b0.x,b0.y); c.closePath(); c.fill();
+  sceneQuad(c,roadFace,'#1f2a3f');
+  sceneQuad(c,[[bt0.x,bt0.y],[bt1.x,bt1.y],[ft1.x,ft1.y],[ft0.x,ft0.y]],'#2a3143');
+  c.fillStyle='#090c13'; c.beginPath(); c.moveTo(f0.x,f0.y); c.lineTo(f1.x,f1.y); c.lineTo(b1.x,b1.y); c.lineTo(b0.x,b0.y); c.closePath(); c.fill();
+  sceneEffectsStats.opaqueWorldFaces+=3;
 }
 
 function sceneSceneryJobs(env) {
@@ -210,6 +212,7 @@ function sceneSceneryJobs(env) {
         const height = shop ? .8 + hash01(seed + 7) * .6 : 1.3 + hash01(seed + 7) * 1.4;
         const lat = side * (2.35 + hash01(seed + 9) * .25);
         const backKey = env === 'snow' ? 'facade-snow-' + (1 + (seed+1) % 2) : 'facade-night-' + (1 + (seed+1) % 4);
+        sceneEffectsStats.opaqueWorldFaces+=3;
         pushJob(rel,c=>sceneBuilding(c,key,backKey,rel,lat,1.55,height,12+hash01(seed+12)*12,side));
         // A second row stays farther from the road and at its own depth.
         if (id % 3 === 0) pushJob(rel + 36, c => sceneSprite(c, 'facade-night-' + (1 + seed % 4), rel + 36, side * 4.6, 1.8, height + .7));
@@ -269,22 +272,23 @@ function sceneHighWallJobs() {
     for(const side of [-1,1]) pushJob(r0,c=>{
       c.globalAlpha=1;
       const fb=projectSprite(r1,side*1.18,0), nb=projectSprite(r0,side*1.18,0);
-      const ft=projectSprite(r1,side*1.18,-.22), nt=projectSprite(r0,side*1.18,-.22);
+      const ft=projectSprite(r1,side*1.18,-.38), nt=projectSprite(r0,side*1.18,-.38);
       sceneQuad(c,[[ft.x,ft.y],[nt.x,nt.y],[nb.x,nb.y],[fb.x,fb.y]],'#252b35');
-      c.strokeStyle='rgba(135,143,157,.28)';c.lineWidth=Math.max(1,nb.w*.003);c.beginPath();c.moveTo(ft.x,ft.y);c.lineTo(fb.x,fb.y);c.stroke();
-      c.strokeStyle='rgba(12,15,22,.9)'; c.lineWidth=Math.max(1,nb.w*.006); c.beginPath(); c.moveTo(ft.x,ft.y);c.lineTo(nt.x,nt.y);c.stroke();
+      c.strokeStyle='#59606d';c.lineWidth=Math.max(1,nb.w*.003);c.beginPath();c.moveTo(ft.x,ft.y);c.lineTo(fb.x,fb.y);c.stroke();
+      c.strokeStyle='#0c0f16'; c.lineWidth=Math.max(1,nb.w*.006); c.beginPath(); c.moveTo(ft.x,ft.y);c.lineTo(nt.x,nt.y);c.stroke();
+      sceneEffectsStats.opaqueWorldFaces++;
     });
   }
   // Repeated painted trees form a porous dark silhouette behind the low rail;
   // no single wall slab is asked to hide the whole roadside.
   const spacing=92,firstTree=Math.ceil((G.playerDist+20)/spacing)*spacing;
-  const portrait=H/W>1.5, treeStep=portrait?32:55;
+  const portrait=H/W>1.5, treeStep=portrait?24:36;
   sceneEffectsStats.treeWorldGap=treeStep;
   for(let bd=Math.ceil((G.playerDist+20)/treeStep)*treeStep;bd<G.playerDist+760;bd+=treeStep){
     const visibility=sceneWeights(bd).city;
     if(!scenePresence(visibility,Math.round(bd/spacing)+41))continue;
     const rel=bd-G.playerDist;
-    for(const side of [-1,1])for(const row of [0,1])pushJob(rel+row*12,c=>sceneSprite(c,row?'tree-broad':'tree-pine',rel+row*12,side*(portrait?1.46+row*.38:1.64+row*.36),portrait?.78:.62,portrait?1.18:1));
+    for(const side of [-1,1])for(const row of [0,1,2])pushJob(rel+row*10,c=>sceneSprite(c,row%2?'tree-broad':'tree-pine',rel+row*10,side*(portrait?1.40+row*.28:1.48+row*.3),portrait?.84:.76,portrait?1.28:1.16));
   }
 }
 
@@ -308,15 +312,16 @@ function sceneCrossroadJobs(){
 
 function sceneSecondaryHighwayJobs(){
   for(const side of [-1,1]){
-    for(let rel=90;rel<720;rel+=SEG_LEN){pushJob(rel,c=>{
-      const visibility=sceneWeights(G.playerDist+rel).city;if(!scenePresence(visibility,Math.round((G.playerDist+rel)/SEG_LEN)+side*17))return;
+    for(let rel=20;rel<1200;rel+=SEG_LEN){pushJob(rel,c=>{
+      const visibility=sceneWeights(G.playerDist+rel).city;if(visibility<.08)return;
       const a=projectSprite(rel,side*3.35,0),b=projectSprite(rel+SEG_LEN,side*3.35,0);
       const aw=a.w*.42,bw=b.w*.42;
       sceneQuad(c,[[b.x-bw,b.y],[b.x+bw,b.y],[a.x+aw,a.y],[a.x-aw,a.y]],'#191f2a');
       c.strokeStyle='#d0c8a7';c.lineWidth=Math.max(1,a.w*.006);c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();
+      sceneEffectsStats.secondaryRoadSegments++;
     });}
-    const carRel=160+((G.raceTime*24+(side>0?90:0))%420);
-    pushJob(carRel,c=>{const visibility=sceneWeights(G.playerDist+carRel).city;if(!scenePresence(visibility,side*31+9))return;sceneSprite(c,side<0?'car-van':'car-sedan',carRel,side*3.35,.42);});
+    const carRel=35+((G.raceTime*24+(side>0?480:0))%1080);
+    pushJob(carRel,c=>{const visibility=sceneWeights(G.playerDist+carRel).city;if(visibility<.08)return;sceneSprite(c,side<0?'car-van':'car-sedan',carRel,side*3.35,.42,null,null,{maxScreenWidth:playerWpx()*.72});});
   }
 }
 
@@ -354,7 +359,7 @@ function sceneBridgeJobs() {
         const im=ART['bridge-tower-night'];
         // Reuse the painted steel columns; remove the original low crossbars
         // from the driving corridor. The only crossbeam is 3.4m above camera.
-        for (const side of [-1,1]) sceneSprite(c,'bridge-tower-night',rel,side*1.25,.14,3.4,[48,52,65,572]);
+        for (const side of [-1,1]) sceneSprite(c,'bridge-tower-night',rel,side*1.25,.22,3.4,[48,52,65,572]);
         const a=projectSprite(rel,-1.32,-3.4),b=projectSprite(rel,1.32,-3.4);
         const h=a.scale*PROJ_H*Y_FACTOR*.16;
         if (a.y+h>0 && a.y<H) c.drawImage(im,117,42,157,42,a.x,a.y,b.x-a.x,h);
@@ -370,7 +375,8 @@ function sceneBridgeJobs() {
           const a=projectSprite(r0,side*1.25,-cableH(G.playerDist+r0));
           const b=projectSprite(r1,side*1.25,-cableH(G.playerDist+r1));
           const foot=projectSprite(r1,side*1.25,0);
-          c.strokeStyle='#526774'; c.lineWidth=Math.max(1,Math.min(2,foot.w*.004));
+          c.strokeStyle='#718796'; c.lineWidth=Math.max(2,Math.min(5,foot.w*.009));
+          sceneEffectsStats.bridgeMemberMinPx=Math.min(sceneEffectsStats.bridgeMemberMinPx,c.lineWidth);
           c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
           if(Math.floor((sd-ta)/50)%2===0){c.beginPath();c.moveTo(b.x,b.y);c.lineTo(foot.x,foot.y);c.stroke();}
         });
