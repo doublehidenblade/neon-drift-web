@@ -922,23 +922,31 @@ function rivalDist(i) {
   return G.playerDist + gap;
 }
 function trafficTravelAngle(rel,lateral) {
-  // p3d-040: a rear-view car sprite's forward axis is screen-up. Rotate that
-  // axis onto the projected road tangent instead of shearing the body, which
-  // distorted the silhouette without actually making it face its travel path.
-  const p0=projectSprite(rel,lateral,0),p1=projectSprite(rel+18,lateral,0);
+  // Screen-space path direction is used only to choose an authored frame.
+  // Use the road centerline tangent: projecting the same lateral offset at
+  // two depths adds vanishing-point convergence and falsely labels a straight
+  // lane car as turning. Rotating a billboard makes it appear to roll.
+  const p0=projectSprite(rel,0,0),p1=projectSprite(rel+18,0,0);
   const dx=p1.x-p0.x,dy=p0.y-p1.y;
-  // A rear-view painting can only suggest yaw; applying the full screen-space
-  // tangent reads as the car rolling onto two wheels on sharper bends. Keep
-  // the travel-direction cue restrained until dedicated yaw frames exist.
-  return clamp(Math.atan2(dx,Math.max(1,dy)),-.12,.12);
+  return Math.atan2(dx,Math.max(1,dy));
+}
+function trafficFrame(base,rel,lateral) {
+  const angle=trafficTravelAngle(rel,lateral);
+  const direction=angle<-.018?'left':angle>.018?'right':'straight';
+  return {key:`${base}-${direction}`,direction,angle};
+}
+function trafficFrameOptions(direction,maxScreenWidth) {
+  // Every generated frame uses the same transparent canvas and ground pivot.
+  return {trafficDirection:direction,anchorX:.5,anchorY:1,maxScreenWidth};
 }
 function rivalJobs() {
   G.rivals.forEach((r, i) => {
     const rel = rivalDist(i) - G.playerDist;
     if (rel < RIVAL_PASS_REL || rel > 1800) return;
     const cars = ['car-sport','car-sedan','car-taxi','car-van'];
-    pushJob(rel, c => sceneSprite(c, cars[i % cars.length], rel, r.x, 0.5, null, null,
-      { rotate: trafficTravelAngle(rel,r.x), maxScreenWidth:playerWpx()*.92 }));
+    const frame=trafficFrame(cars[i % cars.length],rel,r.x);
+    pushJob(rel, c => sceneSprite(c, frame.key, rel, r.x, 0.5, null, null,
+      trafficFrameOptions(frame.direction,playerWpx()*.92)));
   });
 }
 function playerPos() {
@@ -1101,8 +1109,8 @@ function drawTrafficCar(o, rel, fade) {
   const maxWidth=playerWpx()*.92;
   const projected=projectSprite(rel,o.lane,0).w*.5;
   sceneEffectsStats.maxTrafficPlayerRatio=Math.max(sceneEffectsStats.maxTrafficPlayerRatio,projected>0?Math.min(projected,maxWidth)/playerWpx():0);
-  return c => sceneSprite(c, ['car-sedan','car-taxi','car-van','car-sport'][Math.abs(o.seed) % 4], rel,
-    o.lane, 0.5, null, null, { rotate:trafficTravelAngle(rel,o.lane), maxScreenWidth:maxWidth });
+  const frame=trafficFrame(['car-sedan','car-taxi','car-van','car-sport'][Math.abs(o.seed) % 4],rel,o.lane);
+  return c => sceneSprite(c,frame.key,rel,o.lane,0.5,null,null,trafficFrameOptions(frame.direction,maxWidth));
 }
 function drawBarrier(o, rel, fade) {
   return c => sceneSprite(c, 'barricade', rel, o.lane, 0.70);
@@ -1661,6 +1669,10 @@ const ART_FILES = {
   'player-steer-right': 'player-steer-right.webp',
   'car-sedan': 'car-sedan.webp', 'car-taxi': 'car-taxi.webp',
   'car-van': 'car-van.webp', 'car-sport': 'car-sport.webp',
+  'car-sedan-left': 'car-sedan-left.webp', 'car-sedan-straight': 'car-sedan-straight.webp', 'car-sedan-right': 'car-sedan-right.webp',
+  'car-taxi-left': 'car-taxi-left.webp', 'car-taxi-straight': 'car-taxi-straight.webp', 'car-taxi-right': 'car-taxi-right.webp',
+  'car-van-left': 'car-van-left.webp', 'car-van-straight': 'car-van-straight.webp', 'car-van-right': 'car-van-right.webp',
+  'car-sport-left': 'car-sport-left.webp', 'car-sport-straight': 'car-sport-straight.webp', 'car-sport-right': 'car-sport-right.webp',
   'tree-pine': 'tree-pine.webp', 'tree-broad': 'tree-broad.webp',
   'cone': 'cone.webp', 'barricade': 'barricade.webp',
   'nitro-bottle': 'nitro-bottle.webp', 'lamp-night': 'lamp-night.webp',
@@ -1878,11 +1890,12 @@ if (HARNESS) {
   window.__tdWorldEffects = () => ({...sceneEffectsStats});
   window.__tdVisualState = () => ({
     playerWidth: +playerWpx().toFixed(2), laneWidth: +(roadHalfPxAtCar()*2/3).toFixed(2),
-    trafficOrientation: 'travel-rotation', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
+    trafficOrientation: 'directional-frames', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
     trafficMaxPlayerRatio: .92, secondaryRoadRange: [20,1600], secondaryTrafficLifecycle: [-150,1500],
     opponents: G.rivals.length, particles: G.sparks.length, skids:G.skids.length,
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
+  window.__tdTrafficFrame = (base,rel,lateral) => trafficFrame(base,rel,lateral);
   window.__tdForceImpact=(kind,speed,angle)=>{G.speedMs=speed;setImpact(kind,angle,speed/TOP_MS);spawnSparks();render();return window.__tdVisualState();};
   window.__tdSetNitro = (n) => { G.nitro = n; if (n < 100) G.nitroOn = false; };
   window.__tdSparks = () => G.sparks.length;

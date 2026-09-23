@@ -5,8 +5,9 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
 const sceneFaceArt = new Map();
+const sceneCarArt = new Map();
 let sceneLampArt = null;
 function lampSprite(){
   if(sceneLampArt)return sceneLampArt;
@@ -18,6 +19,36 @@ function lampSprite(){
   c.globalCompositeOperation='source-over';sceneLampArt=cv;return cv;
 }
 
+function carSpriteDraw(key, im, screenWidth, screenHeight) {
+  if (!key.startsWith('car-')) return {im,x:0,y:0,w:screenWidth,h:screenHeight};
+  let art=sceneCarArt.get(key);
+  if(!art){
+    const scan=document.createElement('canvas');scan.width=im.naturalWidth;scan.height=im.naturalHeight;
+    const sc=scan.getContext('2d',{willReadFrequently:true});sc.drawImage(im,0,0);
+    const data=sc.getImageData(0,0,scan.width,scan.height).data;
+    let x0=scan.width,y0=scan.height,x1=0,y1=0;
+    for(let y=0;y<scan.height;y++)for(let x=0;x<scan.width;x++)if(data[(y*scan.width+x)*4+3]>8){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+1);y1=Math.max(y1,y+1);}
+    if(x1<=x0||y1<=y0){x0=0;y0=0;x1=scan.width;y1=scan.height;}
+    x0=Math.max(0,x0-2);y0=Math.max(0,y0-2);x1=Math.min(scan.width,x1+2);y1=Math.min(scan.height,y1+2);
+    const source=document.createElement('canvas');source.width=x1-x0;source.height=y1-y0;
+    source.getContext('2d').drawImage(im,x0,y0,source.width,source.height,0,0,source.width,source.height);
+    art={source,mip:null,x:x0/scan.width,y:y0/scan.height,w:source.width/scan.width,h:source.height/scan.height};
+    sceneCarArt.set(key,art);
+  }
+  const w=screenWidth*art.w,h=screenHeight*art.h;
+  let source=art.source;
+  if(w<96){
+    if(!art.mip){
+      art.mip=document.createElement('canvas');art.mip.width=128;art.mip.height=Math.max(1,Math.round(128*source.height/source.width));
+      const mc=art.mip.getContext('2d');mc.imageSmoothingEnabled=true;mc.imageSmoothingQuality='high';mc.drawImage(source,0,0,art.mip.width,art.mip.height);
+    }
+    source=art.mip;sceneEffectsStats.trafficMipDraws++;
+  }
+  sceneEffectsStats.trafficTrimmedDraws++;
+  sceneEffectsStats.maxTrafficDrawAreaRatio=Math.max(sceneEffectsStats.maxTrafficDrawAreaRatio,art.w*art.h);
+  return {im:source,x:screenWidth*art.x,y:screenHeight*art.y,w,h};
+}
+
 function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, options = null) {
   if (rel <= 1 || rel > 1800) return;
   const im = key==='lamp-night' ? lampSprite() : ART[key];
@@ -26,9 +57,11 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
   let sw = p.w * width;
   let sh = height === null ? sw * im.naturalHeight / im.naturalWidth : p.scale * PROJ_H * Y_FACTOR * height;
   if(options?.maxScreenWidth && sw>options.maxScreenWidth){const ratio=options.maxScreenWidth/sw;sw*=ratio;sh*=ratio;}
-  const x = p.x - sw / 2, y = p.y - sh;
-  if (![x, y, sw, sh].every(Number.isFinite)) { sceneStats.invalid++; return; }
-  if (sw < 1 || sh < 1 || x > W || x + sw < 0 || y > H || y + sh < 0) { sceneStats.culled++; return; }
+  const anchorX = options?.anchorX ?? .5, anchorY = options?.anchorY ?? 1;
+  const x = p.x - sw * anchorX, y = p.y - sh * anchorY;
+  const draw=carSpriteDraw(key,im,sw,sh),dx=x+draw.x,dy=y+draw.y;
+  if (![dx, dy, draw.w, draw.h].every(Number.isFinite)) { sceneStats.invalid++; return; }
+  if (draw.w < 1 || draw.h < 1 || dx > W || dx + draw.w < 0 || dy > H || dy + draw.h < 0) { sceneStats.culled++; return; }
   const grounded = key.startsWith('car-') || key.startsWith('tree-') || key.startsWith('person-') ||
     key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle';
   if (grounded && rel < 380) {
@@ -44,13 +77,13 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
     const sway = key.startsWith('tree-') ? Math.sin(G.time*1.15 + rel*.03)*.038 : key.startsWith('person-') ? Math.sin(G.time*4 + rel)*.025 : 0;
     c.save(); c.translate(p.x,p.y); c.rotate(sway);
     if (key === 'kanban-night') c.globalAlpha = .78 + .22*Math.sin(G.time*3 + rel*.04);
-    if (crop) c.drawImage(im, ...crop, -sw/2, -sh, sw, sh); else c.drawImage(im,-sw/2,-sh,sw,sh);
+    if (crop) c.drawImage(draw.im, ...crop, -sw/2, -sh, sw, sh); else c.drawImage(draw.im,-sw/2,-sh,sw,sh);
     c.restore();
   } else if (options?.shear || options?.flip || options?.rotate) {
     c.save();c.translate(p.x,p.y);
     if(options.rotate)c.rotate(options.rotate);
     c.transform(options.flip?-1:1,0,options.shear||0,1,0,0);
-    if(crop)c.drawImage(im,...crop,-sw/2,-sh,sw,sh);else c.drawImage(im,-sw/2,-sh,sw,sh);
+    if(crop)c.drawImage(draw.im,...crop,-sw/2,-sh,sw,sh);else c.drawImage(draw.im,-sw/2,-sh,sw,sh);
     if(key.startsWith('car-')){c.fillStyle='#283041';c.fillRect(-sw*.13,-sh*.39,sw*.26,sh*.105);}
     c.restore();
     if(options.shear)sceneEffectsStats.shearedCars++;
@@ -58,8 +91,15 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
       sceneEffectsStats.rotatedCars++;
       sceneEffectsStats.maxTrafficRotation=Math.max(sceneEffectsStats.maxTrafficRotation,Math.abs(options.rotate));
     }
-  } else if (crop) c.drawImage(im, ...crop, x, y, sw, sh);
-  else c.drawImage(im, x, y, sw, sh);
+  } else if (crop) c.drawImage(draw.im, ...crop, dx, dy, draw.w, draw.h);
+  else c.drawImage(draw.im, dx, dy, draw.w, draw.h);
+  if (options?.trafficDirection) {
+    const stat = 'trafficFrames' + options.trafficDirection[0].toUpperCase() + options.trafficDirection.slice(1);
+    sceneEffectsStats[stat]++;
+    if (options.trafficDirection === 'straight') {
+      sceneEffectsStats.maxStraightAnchorError = Math.max(sceneEffectsStats.maxStraightAnchorError, Math.abs(x + sw * anchorX - p.x));
+    }
+  }
   sceneStats.sprites++;
 }
 
@@ -371,9 +411,8 @@ function sceneSecondaryHighwayJobs(){
     sceneEffectsStats.secondaryTrafficMaxRel=Math.max(sceneEffectsStats.secondaryTrafficMaxRel,carRel);
     if(carRel>2&&carRel<1600)pushJob(carRel,c=>{
       const visibility=sceneWeights(G.playerDist+carRel).city;if(visibility<.08)return;
-      sceneSprite(c,side<0?'car-van':'car-sedan',carRel,side*3.35,.42,null,null,{
-        rotate:trafficTravelAngle(carRel,side*3.35),maxScreenWidth:playerWpx()*.72
-      });
+      const base=side<0?'car-van':'car-sedan',frame=trafficFrame(base,carRel,side*3.35);
+      sceneSprite(c,frame.key,carRel,side*3.35,.42,null,null,trafficFrameOptions(frame.direction,playerWpx()*.72));
     });
   }
 }
