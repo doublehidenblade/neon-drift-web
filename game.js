@@ -844,17 +844,11 @@ const PLAYER_VIEW_KEYS = ['player-v00', 'player-v01', 'player-v02', 'player-v03'
 // view angle in degrees: 0 = front facing the camera, +/-180 = rear
 const PLAYER_VIEW_ANGLES = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
 function playerViewKey(s) {
-  // s = yawVis in [-1,1]; the visible yaw sweeps +/-90deg around the dead-rear view
-  let phi = 180 - s * 90;
-  if (phi > 180) phi -= 360;
-  if (phi < -180) phi += 360;
-  let best = 11, bestD = 1e9;
-  for (let i = 0; i < 12; i++) {
-    let d = Math.abs(phi - PLAYER_VIEW_ANGLES[i]);
-    if (d > 180) d = 360 - d;
-    if (d < bestD) { bestD = d; best = i; }
-  }
-  return PLAYER_VIEW_KEYS[best];
+  // Craig 2026-09-24: the player car always shows its rear view. The steer/
+  // drift yaw frames read as plain turning rather than drifting, so the
+  // 12-view selector is parked at the rear (player-v11). The 12-view asset
+  // set stays registered; civilians keep their own side-when-close logic.
+  return 'player-v11';
 }
 
 function drawPlayerCar() {
