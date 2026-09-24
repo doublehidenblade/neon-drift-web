@@ -172,6 +172,7 @@ const TRACK_DEFS = {
   night:   { laps: 2, lapLen: 4550 },
   mixed:   { laps: 2, lapLen: 4550 },
   circuit: { laps: 3, lapLen: 4600 },
+  complex: { laps: 2, lapLen: 5200 },
 };
 function buildTrackData(track) {
   const def = TRACK_DEFS[track] || TRACK_DEFS.night;
@@ -224,6 +225,35 @@ const PLAN_CIRCUIT = [
   [50, 200, 50, -1.45],  // 3800-4120: FINAL hairpin left
   [0, 530, 0, 0],        // 4120-4650: run to the line (sliced to 4600)
 ];
+// p3d-069: the second map deliberately reuses the circuit's scenery systems
+// and expresses unusual road geometry through editor-shaped feature records.
+// Future editor data can serialize this array without knowing renderer code.
+const PLAN_COMPLEX = [
+  [40,360,40,0], [60,260,60,.72], [40,420,40,-.55],
+  [60,260,60,.82], [40,480,40,0], [60,280,60,-.95],
+  [40,520,40,0], [60,260,60,.65], [40,420,40,-.7],
+  [40,760,40,0], [0,840,0,0],
+];
+const COMPLEX_ROAD_FEATURES = Object.freeze([
+  { id:'split', type:'split', start:520, end:900, lanesFrom:4, lanesTo:4, branchSide:1, label:'ROAD SPLIT' },
+  { id:'merge', type:'merge', start:1080, end:1440, lanesFrom:4, lanesTo:4, branchSide:-1, label:'ROAD MERGE' },
+  { id:'shrink', type:'lane-shrink', start:1640, end:2040, lanesFrom:4, lanesTo:2, label:'4 > 2 LANES' },
+  { id:'underpass', type:'overpass-under', start:2380, end:2540, lanesFrom:2, lanesTo:2, label:'UNDERPASS' },
+  { id:'overpass', type:'overpass-over', start:2760, end:3180, lanesFrom:2, lanesTo:2, label:'OVERPASS' },
+  { id:'tunnel', type:'tunnel', start:3560, end:4100, lanesFrom:2, lanesTo:2, label:'RIDGE TUNNEL' },
+]);
+function roadFeatures() { return G.track === 'complex' ? COMPLEX_ROAD_FEATURES : []; }
+function roadFeatureAt(d, type = null) {
+  const m=((d%LAP_LEN)+LAP_LEN)%LAP_LEN;
+  return roadFeatures().find(f=>m>=f.start&&m<f.end&&(!type||f.type===type))||null;
+}
+function roadProfile(d) {
+  if(G.track!=='complex')return {lanes:3,halfWidth:1};
+  const m=((d%LAP_LEN)+LAP_LEN)%LAP_LEN;
+  const f=COMPLEX_ROAD_FEATURES.find(x=>x.type==='lane-shrink'&&m>=x.start&&m<x.end);
+  if(f){const t=clamp((m-f.start)/(f.end-f.start),0,1);return {lanes:t<.5?4:2,halfWidth:lerp(1,.62,t)};}
+  return {lanes:m>=2040&&m<4400?2:4,halfWidth:m>=2040&&m<4400?.62:1};
+}
 const CIRCUIT_SECTORS = [ // [startFrac, name] — shown on the sector banner
   [0.00, 'SHIBUYA'], [0.265, 'AKIHABARA'], [0.496, 'RAINBOW'], [0.765, 'DOCKLANDS'],
 ];
@@ -254,7 +284,7 @@ const HILLS_CIRCUIT = [
 ];
 function buildTrack(which) {
   const segs = [];
-  const plan = which === 'circuit' ? PLAN_CIRCUIT : PLAN_NIGHT;
+  const plan = which === 'circuit' ? PLAN_CIRCUIT : which === 'complex' ? PLAN_COMPLEX : PLAN_NIGHT;
   function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
   for (const [enM, hoM, lvM, cu] of plan) {
     const en = Math.max(0, Math.round(enM / SEG_LEN)),
@@ -266,7 +296,8 @@ function buildTrack(which) {
   }
   while (segs.length < NSEG) segs.push({ curve: 0, y: 0 });
   const track = segs.slice(0, NSEG);
-  const hills = which === 'circuit' ? HILLS_CIRCUIT : HILLS_NIGHT;
+  const hills = which === 'circuit' ? HILLS_CIRCUIT : which === 'complex'
+    ? [[2600,3260,1.45],[3380,4200,-.62],[4520,5000,.55]] : HILLS_NIGHT;
   for (let i = 0; i < track.length; i++) {
     const d = (i + 0.5) * SEG_LEN;
     let y = 0;
@@ -300,6 +331,7 @@ function inTunnel(d) {
     const m = (((d % LAP_LEN) + LAP_LEN) % LAP_LEN);
     return m >= CIRCUIT_TUNNEL_A && m < CIRCUIT_TUNNEL_B;
   }
+  if (G.track === 'complex') return !!roadFeatureAt(d,'tunnel');
   // v70 capture: the "fireworks" sections are NIGHT TUNNELS with hanging string
   // lights and big firework arcs — tunnel 1 at DIST 0.8-4.2% (t=4-9s),
   // tunnel 2 at DIST 36.3-39.3% (t=57-61s). Lap 2 is unobserved (video ends 45%).
@@ -319,6 +351,7 @@ function inTunnel(d) {
  * All bridge code (towers, water, railings, building skip) keys off these. */
 const CIRCUIT_BRIDGE_A = 2760, CIRCUIT_BRIDGE_B = 3300;
 function bridgeBounds() {
+  if (G.track === 'complex') return [2760,3180];
   if (G.track === 'circuit') return [CIRCUIT_BRIDGE_A, CIRCUIT_BRIDGE_B];
   if (G.track === 'mixed') return [TOTAL * 0.228, TOTAL * 0.278];
   return [BRIDGE_A, BRIDGE_B];
@@ -562,7 +595,8 @@ function edgeLimit() {
   // playerX=1 centers the car on the edge line; subtract the body's half
   // width (plus any outward steering lean) in road units
   const sw = roadHalfPxAtCar();
-  return Math.max(0.5, 1 - playerWpx() * 0.54 / sw);
+  const profile=roadProfile(G.playerDist);
+  return Math.max(0.28, profile.halfWidth - playerWpx() * 0.54 / sw);
 }
 function obstacleHalfRoad(o) {
   // drawn half-widths in road units (p3d-067: barrier board 0.46, traffic
@@ -574,7 +608,7 @@ function obstacleHalfRoad(o) {
 }
 const G = {
   state: 'title', playerDist: 0, playerX: 0, speedMs: 0,
-  track: 'circuit', // 'night', 'mixed', or 'circuit' (p3d-002 neon-Tokyo mission)
+  track: 'circuit', // circuit, complex, night, or mixed
   nitro: 0, nitroOn: false, nitroT: 0, nitroTaken: null, nitroDenyT: 0,
   hearts: TUNE.startHearts, raceTime: 0, time: 0, cdT: 0, cdStep: -1,
   invulnT: 0, hitFlash: 0, // collision: post-hit invulnerability + red flash
@@ -745,11 +779,11 @@ function tunnelZones() {
     tunZonesKey = key;
     if (G.track === 'mixed') {
       tunZonesCache = [[TOTAL * 0.008, TOTAL * 0.055], [TOTAL * 0.363, TOTAL * 0.393]];
-    } else if (G.track === 'circuit') {
-      // p3d-016: the circuit tunnel, lap-relative (present on all 3 laps)
+    } else if (G.track === 'circuit' || G.track === 'complex') {
+      // Authored lap-relative tunnels are repeated on every lap.
       tunZonesCache = [];
-      for (let lap = 0; lap < LAPS; lap++)
-        tunZonesCache.push([lap * LAP_LEN + CIRCUIT_TUNNEL_A, lap * LAP_LEN + CIRCUIT_TUNNEL_B]);
+      const [a,b]=G.track==='complex'?[3560,4100]:[CIRCUIT_TUNNEL_A,CIRCUIT_TUNNEL_B];
+      for (let lap = 0; lap < LAPS; lap++) tunZonesCache.push([lap * LAP_LEN + a, lap * LAP_LEN + b]);
     } else {
       tunZonesCache = [];
       for (let lap = 0; lap < LAPS; lap++)
@@ -989,6 +1023,12 @@ function obstacleBlocks(bd) {
   const out = [];
   const b = Math.round(bd / OB_STEP);
   if (bd < 350) return out; // clean start straight
+  // Complex-road demonstrations keep their decision and clearance zones
+  // readable; traffic resumes between features rather than masking geometry.
+  if(G.track==='complex'){
+    const m=((bd%LAP_LEN)+LAP_LEN)%LAP_LEN;
+    if(roadFeatures().some(f=>m>f.start-180&&m<f.end+80))return out;
+  }
   if (inTunnel(bd) || inTunnel(bd + 170) || inTunnel(bd - 170)) return out; // never in/near tunnels
   const h = hash01(b * 7.31 + (G.track === 'night' ? 3 : 11));
   if (h > 0.62 * TUNE.traffic) return out; // ~38% of blocks carry obstacles at 1.0x
@@ -1657,6 +1697,7 @@ function render() {
   sceneHighWallJobs();
   sceneRailJobs();
   sceneGateJobs();
+  sceneComplexRoadJobs();
   sceneCrossroadJobs(); sceneSkidJobs();
   rivalJobs(); obstacleJobs(); nitroJobs();
   runJobs();
@@ -1925,6 +1966,8 @@ if (HARNESS) {
   window.__tdPlayerViews = () => PLAYER_VIEW_KEYS.map(k => ({ key: k, loaded: !!(ART[k] && imgReady(ART[k])) }));
   window.__tdTotal = () => JSON.stringify({ total: TOTAL, laps: LAPS, lapLen: LAP_LEN });
   window.__tdTunnelZones = () => tunnelZones().map((z) => z.slice());
+  window.__tdRoadFeatures = () => roadFeatures().map(f=>({...f}));
+  window.__tdRoadProfile = d => ({...roadProfile(d)});
   window.__tdSceneWeights = d => ({...sceneWeights(d)});
   window.__tdProjectionState = () => ({width:W,height:H,projectionHeight:PROJ_H,cameraHeight:+cameraHeight().toFixed(3),horizon:HORIZON,roadHalf:+roadHalfPxAtCar().toFixed(2),playerWidth:+playerWpx().toFixed(2),playerY:+(H*.815).toFixed(2)});
   // p3d-063: harness-only rival telemetry — absolute distance, relative
@@ -2062,6 +2105,7 @@ function buildTitleScreen() {
   const trackOpts = document.getElementById('trackopts');
   trackOpts.innerHTML = '';
   [['circuit', 'NEON CIRCUIT', 'tokyo night \u2022 3 laps \u2022 mission'],
+   ['complex', 'NEON COMPLEX ROADS', 'split \u2022 merge \u2022 overpass \u2022 tunnel'],
    ['night', 'NEON NIGHT', 'city neon \u2022 2 laps'],
    ['mixed', 'SNOW & SUN', 'snow \u2022 firework tunnels \u2022 2 laps']].forEach(([val, nm, sub], i) => {
     const d = document.createElement('div');
@@ -2072,7 +2116,8 @@ function buildTitleScreen() {
       d.classList.add('sel'); setTrack(val); AudioSys.init(); AudioSys.beep(520, 0.08);
       document.querySelector('#title h2').textContent =
         val === 'night' ? 'NEON CITY \u2022 2 LAPS'
-        : val === 'circuit' ? 'TOKYO NIGHT \u2022 3 LAPS' : 'SNOW & SUN \u2022 2 LAPS';
+        : val === 'circuit' ? 'TOKYO NIGHT \u2022 3 LAPS'
+        : val === 'complex' ? 'NEON COMPLEX ROADS \u2022 2 LAPS' : 'SNOW & SUN \u2022 2 LAPS';
     };
     trackOpts.appendChild(d);
   });

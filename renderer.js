@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 let sceneLampArt = null;
@@ -207,6 +207,7 @@ function drawSceneRoad(env) {
     const a = bounds(Math.max(0, yf)), b = bounds(Math.min(H + 1, yn));
     if (b.y <= a.y) continue;
     const bd = G.playerDist + (n - basePct) * SEG_LEN;
+    const profile=roadProfile(bd),roadHalf=profile.halfWidth;
     const bridge = inBridge(bd),sw=sceneWeights(bd);
     const quayRight = inHarbor(bd), quayLeft = inWaterfront(bd);
     const terrain = env === 'snow' ? '#b5c1cb' : '#25242a';
@@ -247,13 +248,22 @@ function drawSceneRoad(env) {
       if(sw.water<=.5){sceneTexture(ctx,env==='snow'?'tile-concrete-night':'tile-concrete-night',quad(-leftOut,rightOut),1,bd);
       if(env!=='snow'&&sw.green>.5)sceneTexture(ctx,'tile-grass-night',quad(-leftOut,rightOut),1,bd);}
     }
-    sceneQuad(ctx, quad(-1.12,1.12), env === 'snow' ? '#d1d4d5' : '#454653');
-    sceneQuad(ctx, quad(-1,1), '#202532');
-    if (b.y - a.y > 2) sceneTexture(ctx, 'tile-road-night', quad(-1,1), .16,bd);
-    sceneQuad(ctx, quad(-.99,-.976), '#bec4cc'); sceneQuad(ctx, quad(.976,.99), '#bec4cc');
+    // Reusable fork/merge records add a second fully projected drive ribbon.
+    const branch=roadFeatures().find(f=>(f.type==='split'||f.type==='merge')&&((bd%LAP_LEN+LAP_LEN)%LAP_LEN)>=f.start&&((bd%LAP_LEN+LAP_LEN)%LAP_LEN)<f.end);
+    if(branch){const m=((bd%LAP_LEN)+LAP_LEN)%LAP_LEN,t=(m-branch.start)/(branch.end-branch.start),spread=Math.sin(Math.PI*t)*2.55*branch.branchSide;
+      sceneQuad(ctx,quad(spread-roadHalf*1.02,spread+roadHalf*1.02),'#454653');sceneQuad(ctx,quad(spread-roadHalf,spread+roadHalf),'#202532');
+      if(b.y-a.y>2)sceneTexture(ctx,'tile-road-night',quad(spread-roadHalf,spread+roadHalf),.16,bd);
+      sceneQuad(ctx,quad(spread-roadHalf*.99,spread-roadHalf*.965),'#ffe46a');
+      sceneQuad(ctx,quad(spread+roadHalf*.965,spread+roadHalf*.99),'#ffe46a');
+      sceneEffectsStats.complexBranchStrips++;}
+    sceneQuad(ctx, quad(-roadHalf*1.12,roadHalf*1.12), env === 'snow' ? '#d1d4d5' : '#454653');
+    sceneQuad(ctx, quad(-roadHalf,roadHalf), '#202532');
+    if (b.y - a.y > 2) sceneTexture(ctx, 'tile-road-night', quad(-roadHalf,roadHalf), .16,bd);
+    sceneQuad(ctx, quad(-roadHalf*.99,-roadHalf*.976), '#bec4cc'); sceneQuad(ctx, quad(roadHalf*.976,roadHalf*.99), '#bec4cc');
     // Road paint is anchored to track distance, not a restarted canvas dash.
     if (Math.floor(bd / SEG_LEN) % 3 === 0) {
-      for (const lat of [-1/3,1/3]) sceneQuad(ctx, quad(lat-.007,lat+.007), '#c6c3ac');
+      const marks=Array.from({length:profile.lanes-1},(_,i)=>-1+2*(i+1)/profile.lanes);
+      for (const lat of marks) sceneQuad(ctx, quad(lat*roadHalf-.007,lat*roadHalf+.007), '#c6c3ac');
     }
     const inLap = ((bd % LAP_LEN) + LAP_LEN) % LAP_LEN;
     if (Math.abs(inLap - CROSS_D) < SEG_LEN) {
@@ -416,6 +426,45 @@ function sceneCrossroadJobs(){
     c.strokeStyle='#252b37';c.lineWidth=Math.max(2,foot.w*.012);c.beginPath();c.moveTo(foot.x,foot.y);c.lineTo(top.x,top.y);c.stroke();
     const p=projectSprite(rel,side*1.27,-.58);c.fillStyle=t.red?'#ff304e':'#44ef83';c.beginPath();c.arc(p.x,p.y,Math.max(2,p.w*.025),0,Math.PI*2);c.fill();
   });
+}
+
+// p3d-069 editor building blocks: records own placement; this renderer only
+// knows how to draw a feature type. All geometry uses projectSprite so it is
+// world anchored, depth sorted, opaque, and reusable by future map data.
+function sceneComplexRoadJobs(){
+  if(G.track!=='complex')return;
+  const lap=Math.floor(G.playerDist/LAP_LEN);
+  for(const lapIndex of [lap,lap+1])for(const f of roadFeatures()){
+    const start=lapIndex*LAP_LEN+f.start,rel=start-G.playerDist;
+    if(rel>5&&rel<900)pushJob(rel,c=>{
+      const p=projectSprite(rel,0,-1.08),w=Math.max(54,p.w*1.05),h=Math.max(15,p.w*.17);
+      c.fillStyle='#07101d';c.fillRect(p.x-w/2,p.y-h/2,w,h);
+      c.strokeStyle='#34e6ff';c.lineWidth=Math.max(2,p.w*.012);c.strokeRect(p.x-w/2,p.y-h/2,w,h);
+      const scale=clamp(Math.floor(w/(Math.max(1,f.label.length)*6)),1,4);
+      pxText(c,f.label,p.x,p.y-scale*3.5,scale,'#ffffff','center');sceneEffectsStats.featureSigns++;
+    });
+    if(f.type!=='overpass-under')continue;
+    const crossing=lapIndex*LAP_LEN+(f.start+f.end)/2,cr=crossing-G.playerDist;
+    if(cr<=4||cr>900)continue;
+    pushJob(cr,c=>{
+      // A perpendicular elevated road: underside, parapet, four grounded
+      // supports, and a lit far edge make clearance/depth readable while the
+      // player drives beneath it. The later overpass-over zone drives on top.
+      const y=-1.72,near=cr-18,far=cr+18;
+      const q=(r,l,h)=>{const p=projectSprite(r,l,h);return[p.x,p.y];};
+      const deck=[q(far,-4.8,y),q(far,4.8,y),q(near,4.8,y),q(near,-4.8,y)];
+      sceneQuad(c,deck,'#323b4b');
+      const face=[q(near,-4.8,y-.22),q(near,4.8,y-.22),q(near,4.8,y),q(near,-4.8,y)];
+      texturedFace(c,'tile-concrete-night',face);
+      c.strokeStyle='#ff3fb4';c.lineWidth=Math.max(3,projectSprite(cr,0,0).w*.018);c.beginPath();c.moveTo(...face[0]);c.lineTo(...face[1]);c.stroke();
+      for(const lateral of [-1.72,1.72]){
+        const foot=projectSprite(cr,lateral,0),top=projectSprite(cr,lateral,y),pw=Math.max(6,foot.w*.10);
+        c.fillStyle='#171d29';c.fillRect(foot.x-pw/2,top.y,pw,foot.y-top.y);
+        c.fillStyle='#ffd85b';c.fillRect(foot.x-pw*.32,top.y+pw*.4,pw*.64,Math.max(2,pw*.16));
+      }
+      sceneEffectsStats.overpassDecks++;
+    });
+  }
 }
 
 // Two clipped triangles map an image into a real projected quad. Transform
