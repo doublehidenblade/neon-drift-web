@@ -63,14 +63,25 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
   if (![dx, dy, draw.w, draw.h].every(Number.isFinite)) { sceneStats.invalid++; return; }
   if (draw.w < 1 || draw.h < 1 || dx > W || dx + draw.w < 0 || dy > H || dy + draw.h < 0) { sceneStats.culled++; return; }
   const grounded = key.startsWith('car-') || key.startsWith('tree-') || key.startsWith('person-') ||
-    key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle';
+    key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle' ||
+    key === 'torii-night';
   if (grounded && rel < 380) {
     const longShadow = key.startsWith('tree-') || key === 'lamp-night';
     // All cast shadows point away from the nearest left-side street lamp.
     const lampD=Math.round((G.playerDist+rel)/120)*120, away=clamp((G.playerDist+rel-lampD)/120,-1,1);
+    // p3d-068: wide set-piece sprites can plant one contact shadow per footing
+    // (u fractions of sprite width, converted to absolute lateral) instead of
+    // a single centered blob. The torii gate grounds through its two pillar
+    // stone bases at u 0.21 / 0.792 of its sprite.
+    const feet = options?.footShadows ?? [.5];
     c.save(); c.fillStyle = 'rgba(0,0,0,.48)';
-    c.beginPath(); c.ellipse(p.x + sw*(.10+away*.18), p.y-1, sw*(longShadow ? .48 : .52), Math.max(1.2,sw*(longShadow ? .06 : .08)), away*.18, 0, Math.PI*2); c.fill(); c.restore();
-    sceneEffectsStats.shadows++;
+    for (const u of feet) {
+      const fp = u === .5 ? p : projectSprite(rel, lateral + (u - .5) * width, 0);
+      const frx = sw * (feet.length > 1 ? .20 : (longShadow ? .48 : .52));
+      c.beginPath(); c.ellipse(fp.x + sw*(.10+away*.18), fp.y-1, frx, Math.max(1.2,sw*(longShadow ? .06 : .08)), away*.18, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+    sceneEffectsStats.shadows += feet.length;
   }
   const animated = (key.startsWith('tree-') && rel < 380) || key.startsWith('person-') || key === 'kanban-night';
   if (animated) {
@@ -558,7 +569,7 @@ function sceneGateJobs() {
   for (const l of [lap,lap+1]) {
     const rel=l*LAP_LEN+55-G.playerDist;
     if (rel<=2 || rel>1200) continue;
-    pushJob(rel,c => sceneSprite(c,'torii-night',rel,0,2.65,2.7));
+    pushJob(rel,c => sceneSprite(c,'torii-night',rel,0,2.65,2.7,null,{footShadows:[.21,.792]}));
   }
 }
 
