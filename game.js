@@ -835,6 +835,28 @@ function runJobs() {
 
 
 
+// p3d-070: Slipstream-style 12-view player rotation set (AI-generated original
+// art, 1980s anime cel style — never present as designer-drawn). Views run
+// around the car: v00..v04 left hemisphere, v05 front, v06..v10 right, v11 rear.
+const PLAYER_VIEW_KEYS = ['player-v00', 'player-v01', 'player-v02', 'player-v03',
+  'player-v04', 'player-v05', 'player-v06', 'player-v07',
+  'player-v08', 'player-v09', 'player-v10', 'player-v11'];
+// view angle in degrees: 0 = front facing the camera, +/-180 = rear
+const PLAYER_VIEW_ANGLES = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
+function playerViewKey(s) {
+  // s = yawVis in [-1,1]; the visible yaw sweeps +/-90deg around the dead-rear view
+  let phi = 180 - s * 90;
+  if (phi > 180) phi -= 360;
+  if (phi < -180) phi += 360;
+  let best = 11, bestD = 1e9;
+  for (let i = 0; i < 12; i++) {
+    let d = Math.abs(phi - PLAYER_VIEW_ANGLES[i]);
+    if (d > 180) d = 360 - d;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return PLAYER_VIEW_KEYS[best];
+}
+
 function drawPlayerCar() {
   const c = ctx;
   const wpx = playerWpx(), hpx = wpx * 0.62;
@@ -852,25 +874,21 @@ function drawPlayerCar() {
   // p3d-032: neon underglow removed — contact shadow only
   c.fillStyle = 'rgba(0,0,0,0.5)';
   c.beginPath(); c.ellipse(x, y + hpx * 0.36, wpx * 0.5, hpx * 0.11, 0, 0, 6.29); c.fill();
-  // p3d-032 (ART REBUILD): the code-drawn body (red shell, cabin, wing,
-  // tail light, plate, diffuser) is replaced by the AI-generated sprite set
-  // (assets32/player-rear + player-steer-left/right, 1980s anime cel style).
-  // The steering flank is baked into the left/right sprites (dark red on the
-  // turning-side outer flank, satisfying the BUG-018 palette probe). A subtle
-  // yaw + foreshorten keeps the turn reading as motion; drift adds yaw.
-  // p3d-033 (CAR-002): the steer sprites are regenerated at the rear sprite's
-  // aspect (slight 3/4, same car, same height) so all three views draw at the
-  // same bounding box (within 2%). The canvas yaw is now only a whisper —
-  // the art carries the turn — and the foreshorten is gone.
+  // p3d-070 (PLAYER 12-VIEW SET): the old 3-sprite set (player-rear +
+  // player-steer-left/right) is replaced by the AI-generated 12-view rotation
+  // set (assets32/player-v00..v11, 1980s anime cel style, original art — never
+  // present as designer-drawn). playerViewKey() picks the nearest view to the
+  // visual yaw; the art carries the turn, the canvas yaw is only a whisper.
   // The neon underglow and the trailing light streak are gone (Craig
   // 2026-09-20: no rainbow/light-trail styling) — only a contact shadow.
   const ddir = Math.sign(G.inputSteer) || Math.sign(G.yawVis) || 1;
   const dy = G.drift * ddir;
-  const steerMag = Math.abs(s);
-  const sprKey = steerMag > 0.12 ? (s < 0 ? 'player-steer-left' : 'player-steer-right') : 'player-rear';
+  // p3d-070: the 12-view set replaces the old 3-sprite (rear + steer L/R) set.
+  // The art carries the yaw; the canvas rotation is only a whisper now.
+  const sprKey = playerViewKey(s);
   const spr = ART[sprKey];
   c.save();
-  const angle = s * 0.13 + dy * 0.08 + G.impactYaw;
+  const angle = s * 0.03 + dy * 0.02 + G.impactYaw;
   // Pivot at the comparatively stable nose/top of the image. Rotation moves
   // the rear outward, rather than sliding the entire car sideways.
   c.translate(x, y - hpx * 0.58);
@@ -1681,9 +1699,12 @@ const ART_FILES = {
   'sky-night-band': 'sky-night-band.webp',
   'skyline-night': 'skyline-night.webp',
   'mountains-night': 'mountains-night.webp',
-  'player-rear': 'player-rear.webp',
-  'player-steer-left': 'player-steer-left.webp',
-  'player-steer-right': 'player-steer-right.webp',
+  'player-v00': 'player-v00.webp', 'player-v01': 'player-v01.webp',
+  'player-v02': 'player-v02.webp', 'player-v03': 'player-v03.webp',
+  'player-v04': 'player-v04.webp', 'player-v05': 'player-v05.webp',
+  'player-v06': 'player-v06.webp', 'player-v07': 'player-v07.webp',
+  'player-v08': 'player-v08.webp', 'player-v09': 'player-v09.webp',
+  'player-v10': 'player-v10.webp', 'player-v11': 'player-v11.webp',
   'car-sedan': 'car-sedan.webp', 'car-taxi': 'car-taxi.webp',
   'car-van': 'car-van.webp', 'car-sport': 'car-sport.webp',
   'car-sedan-left': 'car-sedan-left.webp', 'car-sedan-straight': 'car-sedan-straight.webp', 'car-sedan-right': 'car-sedan-right.webp',
@@ -1899,7 +1920,9 @@ if (HARNESS) {
   window.__tdSteer = (v) => { G.inputSteer = v; };
   window.__tdDrift = (on) => { G.driftKey = !!on; }; // p3d-002: hold the drift key
   window.__tdInput = () => JSON.stringify({ steer: G.inputSteer, driftKey: G.driftKey });
-  window.__tdPose = () => ({ steer: +G.steerVis.toFixed(3), hold: +G.steerHold.toFixed(3), yaw: +G.yawVis.toFixed(3), drift: +G.drift.toFixed(3), impactYaw: +G.impactYaw.toFixed(3) });
+  window.__tdPose = () => ({ steer: +G.steerVis.toFixed(3), hold: +G.steerHold.toFixed(3), yaw: +G.yawVis.toFixed(3), drift: +G.drift.toFixed(3), impactYaw: +G.impactYaw.toFixed(3) , playerView: playerViewKey(G.yawVis) });
+  // p3d-070: player 12-view set inspection for tests/QA
+  window.__tdPlayerViews = () => PLAYER_VIEW_KEYS.map(k => ({ key: k, loaded: !!(ART[k] && imgReady(ART[k])) }));
   window.__tdTotal = () => JSON.stringify({ total: TOTAL, laps: LAPS, lapLen: LAP_LEN });
   window.__tdTunnelZones = () => tunnelZones().map((z) => z.slice());
   window.__tdSceneWeights = d => ({...sceneWeights(d)});

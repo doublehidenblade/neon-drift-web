@@ -59,22 +59,6 @@
       "bytes": 132852
     },
     {
-      "file": "assets32/player-steer-left.webp",
-      "size": [
-        560,
-        239
-      ],
-      "bytes": 21986
-    },
-    {
-      "file": "assets32/player-steer-right.webp",
-      "size": [
-        560,
-        239
-      ],
-      "bytes": 22102
-    },
-    {
       "file": "assets32/car-sedan.webp",
       "size": [
         380,
@@ -177,14 +161,6 @@
         700
       ],
       "bytes": 79580
-    },
-    {
-      "file": "assets32/player-rear.webp",
-      "size": [
-        560,
-        403
-      ],
-      "bytes": 25712
     },
     {
       "file": "assets32/guardrail-seg.webp",
@@ -409,6 +385,102 @@
         320
       ],
       "bytes": 66958
+    },
+    {
+      "file": "assets32/player-v00.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 20012
+    },
+    {
+      "file": "assets32/player-v01.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 20764
+    },
+    {
+      "file": "assets32/player-v02.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 16558
+    },
+    {
+      "file": "assets32/player-v03.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 23176
+    },
+    {
+      "file": "assets32/player-v04.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 23416
+    },
+    {
+      "file": "assets32/player-v05.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 25410
+    },
+    {
+      "file": "assets32/player-v06.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 23390
+    },
+    {
+      "file": "assets32/player-v07.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 23504
+    },
+    {
+      "file": "assets32/player-v08.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 16634
+    },
+    {
+      "file": "assets32/player-v09.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 19748
+    },
+    {
+      "file": "assets32/player-v10.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 19650
+    },
+    {
+      "file": "assets32/player-v11.webp",
+      "size": [
+        672,
+        380
+      ],
+      "bytes": 21450
     }
   ]
 }
