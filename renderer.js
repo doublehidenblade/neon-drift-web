@@ -74,11 +74,15 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
     // a single centered blob. The torii gate grounds through its two pillar
     // stone bases at u 0.21 / 0.792 of its sprite.
     const feet = options?.footShadows ?? [.5];
+    // p3d-067: a prop may opt into centered contact shadows (centeredShadow)
+    // with an optional per-foot x-radius fraction (footRx) — thin objects'
+    // shadows stay under their feet instead of reading detached/floating.
+    const centered = options?.centeredShadow === true;
     c.save(); c.fillStyle = 'rgba(0,0,0,.48)';
     for (const u of feet) {
       const fp = u === .5 ? p : projectSprite(rel, lateral + (u - .5) * width, 0);
-      const frx = sw * (feet.length > 1 ? .20 : (longShadow ? .48 : .52));
-      c.beginPath(); c.ellipse(fp.x + sw*(.10+away*.18), fp.y-1, frx, Math.max(1.2,sw*(longShadow ? .06 : .08)), away*.18, 0, Math.PI*2); c.fill();
+      const frx = sw * (options?.footRx ?? (feet.length > 1 ? .20 : (longShadow ? .48 : .52)));
+      c.beginPath(); c.ellipse(fp.x + (centered ? 0 : sw*(.10+away*.18)), fp.y-1, frx, Math.max(1.2,sw*(longShadow ? .06 : .08)), centered ? 0 : away*.18, 0, Math.PI*2); c.fill();
     }
     c.restore();
     sceneEffectsStats.shadows += feet.length;

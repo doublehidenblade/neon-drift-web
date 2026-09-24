@@ -565,7 +565,7 @@ function edgeLimit() {
   return Math.max(0.5, 1 - playerWpx() * 0.54 / sw);
 }
 function obstacleHalfRoad(o) {
-  // drawn half-widths in road units (p3d-011: barrier board 0.70, traffic
+  // drawn half-widths in road units (p3d-067: barrier board 0.46, traffic
   // body 0.50, 3-cone spread) — hitboxes stay slightly inside the sprites
   // so hits are forgiving, never wider than what the player sees.
   if (o.type === 'barrier') return 0.28;
@@ -1125,7 +1125,12 @@ function drawTrafficCar(o, rel, fade) {
   return c => sceneSprite(c,frame.key,rel,o.lane,0.5,null,null,trafficFrameOptions(frame.direction,maxWidth));
 }
 function drawBarrier(o, rel, fade) {
-  return c => sceneSprite(c, 'barricade', rel, o.lane, 0.70);
+  // p3d-067: the roadblock reads as a real A-frame construction barricade —
+  // drawn at a plausible physical size (narrower than the player car) with
+  // centered contact shadows under the A-frame feet, so the legs visibly
+  // meet the road instead of floating on a detached cast shadow.
+  return c => sceneSprite(c, 'barricade', rel, o.lane, 0.46, null, null,
+    { footShadows: [0.05, 0.95], centeredShadow: true, footRx: 0.10 });
 }
 function drawCones(o, rel, fade) {
   return c => {
