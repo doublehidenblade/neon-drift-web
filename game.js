@@ -539,6 +539,7 @@ const TUNE = {
   traffic: 1.0,      // traffic density multiplier
   trafficSpeed: 30,  // civilian vehicle speed (m/s)
   rivalPace: 1.0,    // progress multiplier for rival pass points
+  opponentSpeed: 0.88, // rival own-speed multiplier (the one opponent-speed control)
   rivalCount: 4,     // opponents in the race (applies next race)
   propDensity: 1.0,  // roadside sprite density
   lapCount: 0,       // 0 uses the selected track's authored lap count
@@ -622,6 +623,15 @@ const G = {
   drift: 0, driftKey: false, driftEvents: 0, driftT: 0, driftBoostT: 0, smokeT: 0,
 };
 const PASS_FRAC = [0.28, 0.45, 0.70, 0.88]; // fraction of TOTAL where rival i is passed
+// p3d-072: a staggered, symmetric two-column starting grid. Distances are
+// absolute meters ahead of the player; extras repeat the formation farther
+// up-track without widening into the shoulders.
+const OPPONENT_START_GRID = [
+  { d: 32, x: -0.34 }, { d: 42, x: 0.34 },
+  { d: 52, x: -0.34 }, { d: 62, x: 0.34 },
+  { d: 72, x: -0.34 }, { d: 82, x: 0.34 },
+  { d: 92, x: -0.34 }, { d: 102, x: 0.34 },
+];
 const RCOL = ['#5a6cff', '#b46aff', '#ff6ad5', '#ffd23f'];
 function resetRace() {
   // Race-shape options apply at restart so changing them cannot move the
@@ -640,7 +650,13 @@ function resetRace() {
   G.collisions = 0; G.scrapeAccum = 0;
   G.drift = 0; G.driftKey = false; G.driftEvents = 0; G.driftT = 0; G.driftBoostT = 0; G.smokeT = 0;
   G.rivals = [];
-  for (let i = 0; i < TUNE.rivalCount; i++) G.rivals.push({ x: (rnd() * 1.2 - 0.6), color: RCOL[i % RCOL.length], wob: rnd() * 6.28, passT: null, passD: null, passSpeed: null });
+  for (let i = 0; i < TUNE.rivalCount; i++) {
+    const slot = OPPONENT_START_GRID[i % OPPONENT_START_GRID.length];
+    const row = Math.floor(i / OPPONENT_START_GRID.length);
+    // Preserve the established seeded race lanes once the launch formation
+    // opens up; this also preserves every later deterministic capture.
+    G.rivals.push({ x: slot.x, raceX: rnd() * 1.2 - 0.6, startD: slot.d + row * 80, color: RCOL[i % RCOL.length], wob: rnd() * 6.28, passT: null, passD: null, passSpeed: null });
+  }
 }
 
 /* ---------- projection ---------- */
@@ -969,19 +985,29 @@ function rivalDist(i) {
   const r = G.rivals[i];
   if (r.passT != null) return r.passD + r.passSpeed * (G.raceTime - r.passT);
   const gap = Math.max(25, (passAt - G.playerDist) * 0.12);
+  // Leave the grid under a real, tunable opponent speed, then merge smoothly
+  // into the established race-shape gap before the first authored overtake.
+  // TUNE.opponentSpeed is deliberately the sole own-speed multiplier.
+  if (G.playerDist < 500) {
+    const gridD = r.startD + TUNE.opponentSpeed * TOP_MS * G.raceTime;
+    return lerp(gridD, G.playerDist + gap, clamp(G.playerDist / 500, 0, 1));
+  }
   if (G.playerDist >= passAt) {
     // first evaluation past the pass point: snapshot the CURRENT position
     // (exactly the pre-pass value — no backward jump on coarse steps) and
     // the own-speed; both frozen from here on.
     r.passT = G.raceTime;
     r.passD = G.playerDist + gap;
-    r.passSpeed = Math.max(0.88 * G.speedMs, 25);
+    r.passSpeed = Math.max(TUNE.opponentSpeed * G.speedMs, 25);
     return r.passD;
   }
   return G.playerDist + gap;
 }
 const TRAFFIC_PARTIAL_MAX_REL = 120;
 const TRAFFIC_PARTIAL_MIN_OFFSET = .28;
+function rivalLateral(r) {
+  return lerp(r.x, r.raceX, clamp(G.playerDist / 120, 0, 1));
+}
 function trafficFrame(base,rel,lateral,playerLateral=G.playerX) {
   // The camera/player's view of another car depends on their relative pose,
   // not the road tangent or that car's ordinary steering. Distant traffic is
@@ -1002,8 +1028,9 @@ function rivalJobs() {
     const rel = rivalDist(i) - G.playerDist;
     if (rel < RIVAL_PASS_REL || rel > 1800) return;
     const cars = ['car-sport','car-sedan','car-taxi','car-van'];
-    const frame=trafficFrame(cars[i % cars.length],rel,r.x);
-    pushJob(rel, c => sceneSprite(c, frame.key, rel, r.x, 0.5, null, null,
+    const x=rivalLateral(r);
+    const frame=trafficFrame(cars[i % cars.length],rel,x);
+    pushJob(rel, c => sceneSprite(c, frame.key, rel, x, 0.5, null, null,
       trafficFrameOptions(frame.direction,playerWpx()*.92)));
   });
 }
@@ -1155,14 +1182,15 @@ function checkRivalBump(dt) {
     const rel = rivalDist(i) - G.playerDist;
     if (Math.abs(rel - 27) > 6) continue;
     const pass = clamp(1 - Math.abs(rel - 12) / 45, 0, 1);
-    const side = r.x >= 0 ? 1 : -1;
-    const rx = r.x + side * pass * 0.28;
+    const x=rivalLateral(r);
+    const side = x >= 0 ? 1 : -1;
+    const rx = x + side * pass * 0.28;
     if (Math.abs(rx - pC) < pHalf + 0.22) {
       G.rivalBumpT = 0.9; // one bump can't chain-rattle
       G.speedMs *= 0.82;
       G.shakeT = Math.max(G.shakeT, 0.3);
-      setImpact('car',-Math.sign(r.x-G.playerX||1),clamp(G.speedMs/TOP_MS,0,1.2));
-      r.x += Math.sign(r.x - G.playerX || 1) * 0.18; // shove the rival aside
+      setImpact('car',-Math.sign(x-G.playerX||1),clamp(G.speedMs/TOP_MS,0,1.2));
+      r.raceX += Math.sign(x - G.playerX || 1) * 0.18; // shove the rival aside
       spawnSparks();
       AudioSys.beep(220, 0.2);
       return;
@@ -1756,14 +1784,14 @@ const ART_FILES = {
   'cone': 'cone.webp', 'barricade': 'barricade.webp',
   'nitro-bottle': 'nitro-bottle.webp', 'lamp-night': 'lamp-night.webp',
   'gantry-night': 'gantry-night.webp', 'kanban-night': 'kanban-night.webp',
+  'start-gantry-night': 'start-gantry-night.webp',
   'guardrail-seg': 'guardrail-seg.webp',
   'bridge-tower-night': 'bridge-tower-night.webp',
-  // p3d-032 it1: AI facade variants + AI torii gate sprite
+  // p3d-032 it1: AI facade variants
   'facade-night-1': 'facade-night-1.webp', 'facade-night-2': 'facade-night-2.webp',
   'facade-night-3': 'facade-night-3.webp', 'facade-night-4': 'facade-night-4.webp',
   'facade-shop-1': 'facade-shop-1.webp', 'facade-shop-2': 'facade-shop-2.webp',
   'facade-snow-1': 'facade-snow-1.webp', 'facade-snow-2': 'facade-snow-2.webp',
-  'torii-night': 'torii-night.webp',
   // p3d-033 (ART-002): AI pedestrian sprites (1980s anime cel style),
   // replacing the canvas fillRect+arc crowd figures
   'person-night-1': 'person-night-1.webp',
@@ -1852,6 +1880,7 @@ const TUNE_DEFS = [
   ['Traffic density', 'traffic', 0, 2, 0.1, (v) => v.toFixed(1) + 'x'],
   ['Traffic speed', 'trafficSpeed', 0, 55, 1, (v) => v.toFixed(0) + ' m/s'],
   ['Opponent pace', 'rivalPace', 0.6, 1.4, 0.05, (v) => v.toFixed(2) + 'x'],
+  ['Opponent speed', 'opponentSpeed', 0.5, 1.1, 0.05, (v) => v.toFixed(2) + 'x'],
   ['Opponent count', 'rivalCount', 0, 8, 1, (v) => v.toFixed(0), 'next'],
   ['Prop density', 'propDensity', 0.25, 2, 0.25, (v) => v.toFixed(2) + 'x'],
   ['Lap count', 'lapCount', 0, 6, 1, (v) => v === 0 ? 'TRACK DEFAULT' : v.toFixed(0), 'next'],
@@ -1980,6 +2009,15 @@ if (HARNESS) {
       passT: r.passT, passSpeed: r.passSpeed == null ? null : +r.passSpeed.toFixed(2),
       t: +G.raceTime.toFixed(3),
     };
+  });
+  // p3d-072: deterministic evidence for the symmetric start grid and its
+  // single speed control. Art registration is included so CI catches a
+  // silent return of the removed torii or a missing START banner.
+  window.__tdStartGrid = () => ({
+    slots: G.rivals.map((r, i) => ({ i, x: r.x, startD: r.startD, d: +rivalDist(i).toFixed(2) })),
+    opponentSpeed: TUNE.opponentSpeed,
+    bannerRegistered: Object.prototype.hasOwnProperty.call(ART_FILES, 'start-gantry-night'),
+    toriiRegistered: Object.prototype.hasOwnProperty.call(ART_FILES, 'torii-night'),
   });
   window.__tdWorldEffects = () => ({...sceneEffectsStats});
   window.__tdVisualState = () => ({

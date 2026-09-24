@@ -63,8 +63,7 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
   if (![dx, dy, draw.w, draw.h].every(Number.isFinite)) { sceneStats.invalid++; return; }
   if (draw.w < 1 || draw.h < 1 || dx > W || dx + draw.w < 0 || dy > H || dy + draw.h < 0) { sceneStats.culled++; return; }
   const grounded = key.startsWith('car-') || key.startsWith('tree-') || key.startsWith('person-') ||
-    key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle' ||
-    key === 'torii-night';
+    key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle';
   if (grounded && rel < 380) {
     const longShadow = key.startsWith('tree-') || key === 'lamp-night';
     // All cast shadows point away from the nearest left-side street lamp.
@@ -636,9 +635,9 @@ function sceneTunnelJobs() {
 function sceneGateJobs() {
   const lap=Math.floor(G.playerDist/LAP_LEN);
   for (const l of [lap,lap+1]) {
-    const rel=l*LAP_LEN+55-G.playerDist;
+    const rel=l*LAP_LEN+115-G.playerDist;
     if (rel<=2 || rel>1200) continue;
-    pushJob(rel,c => sceneSprite(c,'torii-night',rel,0,2.65,2.7,null,{footShadows:[.21,.792]}));
+    pushJob(rel,c => sceneSprite(c,'start-gantry-night',rel,0,2.55,1.75));
   }
 }
 
