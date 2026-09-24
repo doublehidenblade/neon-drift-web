@@ -456,6 +456,11 @@ function sceneBridgeJobs() {
   const [A,B] = bridgeBounds();
   const lap = Math.floor(G.playerDist / LAP_LEN);
   const bridgeLaps = G.track === 'mixed' ? [0] : [lap,lap+1];
+  // 128-2: bridge members must read as substantial on a phone screen, not
+  // hairlines. Cables get a dark-outline + steel-core double pass at
+  // 6-14 CSS px, hangers 5-9 px, towers keep the authored art but drawn
+  // wider over a dark structural backing, and the crossbeam doubles in
+  // depth with its own backing band.
   for (const l of bridgeLaps) {
     const start = l*LAP_LEN+A, end = l*LAP_LEN+B;
     const towers = [start+30,start+(end-start)/2,end-30];
@@ -466,10 +471,22 @@ function sceneBridgeJobs() {
         const im=ART['bridge-tower-night'];
         // Reuse the painted steel columns; remove the original low crossbars
         // from the driving corridor. The only crossbeam is 3.4m above camera.
-        for (const side of [-1,1]) sceneSprite(c,'bridge-tower-night',rel,side*1.25,.22,3.4,[48,52,65,572]);
+        for (const side of [-1,1]) {
+          // Dark structural backing gives the painted column real mass at
+          // distance; the authored column draws over it, wider than before.
+          const base=projectSprite(rel,side*1.25,0),top=projectSprite(rel,side*1.25,-3.4);
+          const backW=base.w*.36;
+          c.fillStyle='#1d2530';
+          c.fillRect(base.x-backW/2,top.y,backW,base.y-top.y);
+          sceneSprite(c,'bridge-tower-night',rel,side*1.25,.30,3.4,[48,52,65,572]);
+        }
         const a=projectSprite(rel,-1.32,-3.4),b=projectSprite(rel,1.32,-3.4);
-        const h=a.scale*PROJ_H*Y_FACTOR*.16;
-        if (a.y+h>0 && a.y<H) c.drawImage(im,117,42,157,42,a.x,a.y,b.x-a.x,h);
+        const h=a.scale*PROJ_H*Y_FACTOR*.30;
+        if (a.y+h>0 && a.y<H) {
+          c.fillStyle='#1d2530';
+          c.fillRect(a.x,a.y+h*.2,b.x-a.x,h);
+          c.drawImage(im,117,42,157,42,a.x,a.y,b.x-a.x,h);
+        }
       });
     }
     for (let i=0;i<towers.length-1;i++) {
@@ -482,10 +499,23 @@ function sceneBridgeJobs() {
           const a=projectSprite(r0,side*1.25,-cableH(G.playerDist+r0));
           const b=projectSprite(r1,side*1.25,-cableH(G.playerDist+r1));
           const foot=projectSprite(r1,side*1.25,0);
-          c.strokeStyle='#718796'; c.lineWidth=Math.max(2,Math.min(5,foot.w*.009));
-          sceneEffectsStats.bridgeMemberMinPx=Math.min(sceneEffectsStats.bridgeMemberMinPx,c.lineWidth);
+          // 128-2: the suspension cable is a substantial two-pass member —
+          // a dark structural outline with a steel core over it.
+          const cableW=Math.max(6,Math.min(14,foot.w*.024));
+          sceneEffectsStats.bridgeMemberMinPx=Math.min(sceneEffectsStats.bridgeMemberMinPx,cableW);
+          c.lineCap='round';
+          c.strokeStyle='#222b36'; c.lineWidth=cableW;
           c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
-          if(Math.floor((sd-ta)/50)%2===0){c.beginPath();c.moveTo(b.x,b.y);c.lineTo(foot.x,foot.y);c.stroke();}
+          c.strokeStyle='#a9c1d4'; c.lineWidth=Math.max(2,cableW*.55);
+          c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+          // Hangers every 50m segment, same two-pass treatment, slightly
+          // lighter so the cable stays the dominant read.
+          const hangerW=Math.max(5,Math.min(9,foot.w*.016));
+          sceneEffectsStats.bridgeMemberMinPx=Math.min(sceneEffectsStats.bridgeMemberMinPx,hangerW);
+          c.strokeStyle='#222b36'; c.lineWidth=hangerW;
+          c.beginPath(); c.moveTo(b.x,b.y); c.lineTo(foot.x,foot.y); c.stroke();
+          c.strokeStyle='#8fa8ba'; c.lineWidth=Math.max(2,hangerW*.55);
+          c.beginPath(); c.moveTo(b.x,b.y); c.lineTo(foot.x,foot.y); c.stroke();
         });
       }
     }
