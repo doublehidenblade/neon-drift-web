@@ -17,7 +17,7 @@ if (HARNESS) {
   window.__tdFindCollision = () => {
     for (let d = 460; d < LAP_LEN; d += OB_STEP) {
       const o = obstacleBlocks(d).find(x => x.type !== 'car');
-      if (o) return { distance: o.d - 27, x: o.lane };
+      if (o) return { distance: o.d - contactRel(), x: o.lane };
     }
     throw new Error('No stationary collision fixture found');
   };
@@ -39,6 +39,33 @@ if (HARNESS) {
   window.__tdPropHits = () => [...propHits.values()].map(hit => ({
     ...hit, age: +(G.time - hit.started).toFixed(3), grounded: G.time - hit.started >= .72,
   }));
+  // p3d-064: audit p3d-080's displaced debris visuals. Hit props are
+  // non-blocking; report each alpha-visible width beside its zero collision
+  // box so tests pin all four new sprite states.
+  window.__tdPropCollisionBounds = (type, age) => {
+    const fx = window.__tdCollisionFixture(type);
+    window.__tdCapture(fx.distance, 'circuit', fx.x);
+    const state = window.__tdPropHit(fx, age, 1, 'player');
+    const flying = age < .72;
+    const key = type === 'barrier'
+      ? (flying ? 'barricade-flying' : 'barricade-broken')
+      : (flying ? 'cone-flying' : 'cone-crushed');
+    const rel = fx.d - G.playerDist;
+    const p = projectSprite(rel, state.lane, 0);
+    const nominal = type === 'barrier' ? p.w * .46 : p.scale * PROJ_H * Y_FACTOR * .30;
+    const drawn = nominal * (flying ? 1 : .82);
+    return { type, key, age, collisionHalf: obstacleCollisionHalfRoad({
+      d:fx.d, lane:fx.x, type, seed:fx.seed
+    }, rel), visualHalf: drawn * spriteAlphaBounds(key).w / (2 * p.w), alphaBounds:spriteAlphaBounds(key) };
+  };
+  // p3d-064: deterministic fixture at the visual contact plane.
+  window.__tdCollisionFixture = (type) => {
+    for (let d = 460; d < LAP_LEN; d += OB_STEP) {
+      const o = obstacleBlocks(d).find(x => x.type === type);
+      if (o) return { distance: o.d - contactRel(), d: o.d, x: o.lane, type: o.type, seed: o.seed };
+    }
+    throw new Error(`No ${type} collision fixture found`);
+  };
   window.__tdPlay = () => { qaFrozen = false; lastT = performance.now(); acc = 0; };
   window.__tdFreeze = () => { qaFrozen = true; };
   window.__tdFrame = () => { render(); return { jobs: jobStats.lastCount, badKey: jobStats.badKey, ...sceneStats }; };

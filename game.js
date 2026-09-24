@@ -599,13 +599,68 @@ function edgeLimit() {
   const profile=roadProfile(G.playerDist);
   return Math.max(0.28, profile.halfWidth - playerWpx() * 0.54 / sw);
 }
-function obstacleHalfRoad(o) {
-  // drawn half-widths in road units (p3d-067: barrier board 0.46, traffic
-  // body 0.50, 3-cone spread) — hitboxes stay slightly inside the sprites
-  // so hits are forgiving, never wider than what the player sees.
-  if (o.type === 'barrier') return 0.28;
-  if (o.type === 'cones') return 0.13 * H / W;
-  return 0.144;
+// p3d-064: collision boxes sit 10% inside the drawn sprite bounds —
+// forgiving, and NEVER wider than what the player sees.
+const BOX_TIGHTEN = 0.9;
+function contactRel() {
+  // p3d-064: the rel (m ahead) at which an obstacle's ground point reaches
+  // the player car's screen anchor (H*0.815). projectSprite's screen y falls
+  // monotonically with rel, so bisection converges on the visual contact
+  // plane for any camera (desktop ≈27m, portrait ≈9m). The old hardcoded 27
+  // was desktop-only: on phones it scored hits on obstacles still visibly
+  // far from the car.
+  const targetY = H * 0.815;
+  let lo = 2, hi = 140;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (projectSprite(mid, 0, 0).y > targetY) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+function obstacleHalfRoad(o, rel = contactRel()) {
+  // p3d-064: collision half-widths are DERIVED from the drawn sprite
+  // geometry, so the box always matches the visible size on every viewport
+  // (Craig 2026-09-23: "not exactly in contact but saw collision" — the old
+  // hardcoded rel≈27 contact plane and fixed widths only matched the
+  // desktop camera). BOX_TIGHTEN keeps every box 10% inside its visual:
+  // forgiving, never wider than what the player sees. Stated tolerance for
+  // the CI assertions in tests/collision-bounds.spec.js: box <= visual
+  // (never a phantom hit) and box >= 0.5 * visual (never degenerate).
+  if (o.type === 'barrier') {
+    // drawBarrier uses a 0.46-road-unit authored sprite. Keep the contact box
+    // 10% inside that exact visible width instead of the old 0.28 half-width,
+    // which extended about 22% beyond each side after p3d-067 resized it.
+    return 0.46 * 0.5 * BOX_TIGHTEN;
+  }
+  if (o.type === 'cones') {
+    // three cones: centers ±0.9 cone-heights, each coneH*aspect/2 half-wide
+    // — the same draw math as drawCones (the depth scale cancels, leaving
+    // lateral units: px per unit is projectSprite().w).
+    const cone = ART.cone;
+    const aspect = imgReady(cone) ? cone.naturalWidth / cone.naturalHeight : 192 / 260;
+    const coneH = PROJ_H * Y_FACTOR * 0.14 / (W * ROAD_FACTOR); // full height, lateral units
+    return coneH * (0.9 + aspect / 2) * BOX_TIGHTEN;
+  }
+  // traffic car: the same width the renderer draws — min(uncapped, cap) —
+  // times the directional frame's alpha-trim fraction, so the box never
+  // exceeds the visible pixels of the frame actually on screen.
+  const frame = trafficFrame(['car-sedan', 'car-taxi', 'car-van', 'car-sport'][Math.abs(o.seed) % 4], rel, o.lane);
+  return carObstacleHalfRoad(frame.key, rel);
+}
+// p3d-064: shared car-body half-width from the drawn geometry: the capped
+// screen width (drawTrafficCar / rivalJobs) times the frame's alpha trim,
+// in lateral road units (projectSprite().w is px per lateral unit), 10%
+// inside the visible pixels.
+function carObstacleHalfRoad(frameKey, rel) {
+  const p = projectSprite(Math.max(rel, 0.5), 0, 0);
+  const sw = Math.min(p.w * 0.5, playerWpx() * 0.92);
+  return sw * carTrimFrac(frameKey) / (2 * p.w) * BOX_TIGHTEN;
+}
+// Once an intact prop becomes flying/crushed/broken debris it is no longer a
+// blocking obstacle. A zero box is the only box that cannot extend beyond a
+// displaced debris visual; this rule is shared by player and civilian paths.
+function obstacleCollisionHalfRoad(o, rel = contactRel()) {
+  return o.type !== 'car' && propHits.has(civilianKey(o)) ? 0 : obstacleHalfRoad(o, rel);
 }
 const G = {
   state: 'title', playerDist: 0, playerX: 0, speedMs: 0,
@@ -1025,6 +1080,7 @@ function trafficFrameOptions(direction,maxScreenWidth) {
   // Every generated frame uses the same transparent canvas and ground pivot.
   return {trafficDirection:direction,anchorX:.5,anchorY:1,maxScreenWidth};
 }
+const RIVAL_CARS = ['car-sport','car-sedan','car-taxi','car-van'];
 function rivalJobs() {
   G.rivals.forEach((r, i) => {
     const rel = rivalDist(i) - G.playerDist;
@@ -1135,14 +1191,16 @@ function resolveCivilianContacts(bodies, dt) {
 function updateCivilianCollisions(dt) {
   const b0 = Math.floor((G.playerDist - 200) / OB_STEP), b1 = Math.floor((G.playerDist + 2800) / OB_STEP);
   const entries = [];
-  for (let block = b0; block <= b1; block++) for (const o of obstacleBlocks(block * OB_STEP)) entries.push(o);
+  for (let block = b0; block <= b1; block++) for (const o of obstacleBlocks(block * OB_STEP)) {
+    if (o.type === 'car' || !propHits.has(civilianKey(o))) entries.push(o);
+  }
   const bodies = entries.map(o => {
     if (o.type !== 'car') return { id: civilianKey(o), source: o, fixed: true, d: o.d, x: o.lane,
-      vd: 0, vx: 0, halfWidth: obstacleHalfRoad(o), halfDepth: o.type === 'barrier' ? 1.3 : 0.8 };
+      vd: 0, vx: 0, halfWidth: obstacleCollisionHalfRoad(o), halfDepth: o.type === 'barrier' ? 1.3 : 0.8 };
     const state = civilianState(o);
     return { id: civilianKey(o), source: o, fixed: false, d: obstacleDist(o) - TUNE.trafficSpeed * dt,
       x: obstacleLane(o), vd: TUNE.trafficSpeed + state.forwardVelocity,
-      vx: state.lateralVelocity, halfWidth: obstacleHalfRoad(o), halfDepth: CIVILIAN_DEPTH_HALF };
+      vx: state.lateralVelocity, halfWidth: obstacleCollisionHalfRoad(o), halfDepth: CIVILIAN_DEPTH_HALF };
   });
   const contacts = resolveCivilianContacts(bodies, dt);
   for (const contact of contacts) {
@@ -1248,21 +1306,25 @@ function drawSparks() {
 function checkObstacles() {
   if (godMode || G.invulnT > 0 || G.state !== 'racing') return;
   const pHalf = playerHalfRoad(), pC = G.playerX + playerLeanRoad();
+  // p3d-064: the contact plane is derived from the projection, not
+  // hardcoded — desktop ≈27m, portrait ≈9m. The old fixed 27 scored hits on
+  // phones while the obstacle was still visibly far from the car.
+  const cRel = contactRel();
   const b0 = Math.floor((G.playerDist - 40) / OB_STEP), b1 = Math.floor((G.playerDist + 40) / OB_STEP);
   for (let b = b0; b <= b1; b++) {
     for (const o of obstacleBlocks(b * OB_STEP)) {
+      if (o.type !== 'car' && propHits.has(civilianKey(o))) continue;
       const od = obstacleDist(o);
       // lateral hitbox = the two drawn silhouettes: the player's wheels plus
       // the obstacle's own body, measured at the obstacle's live (wobbling)
       // screen position — no padded "collide with air" zone (Craig 2026-09-17)
       const wob = 0;
-      // contact = the sprites visually touching: the player car is drawn at
-      // the screen height the projection assigns to ~27m ahead, so an
-      // obstacle only REACHES the car visually at rel≈27 — the old <5m
+      // contact = the sprites visually touching: the obstacle's ground point
+      // reaches the player car's screen anchor at rel≈cRel — the old fixed
       // window let hits land on sprites already pinned behind/under the car
       // (Craig 2026-09-20: invisible hits).
       const rel = od - G.playerDist;
-      if (Math.abs(rel - 27) < 5 && Math.abs(obstacleLane(o) + wob - pC) < pHalf + obstacleHalfRoad(o)) {
+      if (Math.abs(rel - cRel) < 5 && Math.abs(obstacleLane(o) + wob - pC) < pHalf + obstacleCollisionHalfRoad(o, rel)) {
         hitObstacle(o);
         return;
       }
@@ -1275,22 +1337,26 @@ function checkRivalBump(dt) {
   // sparks and a shove, but no heart lost (Craig 2026-09-20: driving straight
   // through a solid-looking rival broke the contact illusion). The hitbox is
   // the two drawn silhouettes: player wheels (playerHalfRoad) + rival body
-  // (0.50 road-widths, what rivalJobs draws), at the rival's live
-  // wobbling/easing screen position. Bumps at rel≈27 — where the rival
-  // sprite visually reaches the player car (p3d-011: the old rel<6 window
-  // fired on a sprite pinned behind the car).
+  // (the capped, alpha-trimmed width rivalJobs draws), at the rival's live
+  // wobbling/easing screen position. Bumps at the derived contact plane —
+  // where the rival sprite visually reaches the player car (p3d-011: the old
+  // rel<6 window fired on a sprite pinned behind the car; p3d-064: the old
+  // fixed 27 was desktop-only).
   if (G.rivalBumpT > 0) G.rivalBumpT -= dt;
   if (godMode || G.state !== 'racing' || G.rivalBumpT > 0) return;
   const pHalf = playerHalfRoad(), pC = G.playerX + playerLeanRoad();
+  const cRel = contactRel();
   for (let i = 0; i < G.rivals.length; i++) {
     const r = G.rivals[i];
     const rel = rivalDist(i) - G.playerDist;
-    if (Math.abs(rel - 27) > 6) continue;
+    if (Math.abs(rel - cRel) > 6) continue;
     const pass = clamp(1 - Math.abs(rel - 12) / 45, 0, 1);
     const x=rivalLateral(r);
     const side = x >= 0 ? 1 : -1;
     const rx = x + side * pass * 0.28;
-    if (Math.abs(rx - pC) < pHalf + 0.22) {
+    const cars = ['car-sport','car-sedan','car-taxi','car-van'];
+    const frame = trafficFrame(cars[i % cars.length], rel, x);
+    if (Math.abs(rx - pC) < pHalf + carObstacleHalfRoad(frame.key, rel)) {
       G.rivalBumpT = 0.9; // one bump can't chain-rattle
       G.speedMs *= 0.82;
       G.shakeT = Math.max(G.shakeT, 0.3);
@@ -2112,6 +2178,17 @@ if (HARNESS) {
   // p3d-014: harness-only teleport + time control + water-polygon export,
   // for deterministic harbor probes (zero gameplay impact)
   window.__tdSetDist = (d) => { G.playerDist = d; render(); };
+  // p3d-064: true-drawn-rect capture for collision-box-vs-visual measurement.
+  // Start capture, render one frame, then read the rects (screen px) that
+  // sceneSprite actually drew — post-trim, post-maxScreenWidth-cap.
+  window.__tdRectCapStart = () => { window.__tdRectCap = []; };
+  window.__tdRectCapGet = () => JSON.stringify(window.__tdRectCap || []);
+  window.__tdPlayerRect = () => {
+    const wpx = playerWpx(), hpx = wpx * 0.62, x = W / 2, y = H * 0.815;
+    const spr = ART['player-rear'];
+    const sw = wpx * 1.04, sh = sw * (spr.naturalHeight / spr.naturalWidth);
+    return [x - sw / 2, y - hpx * 0.58, x + sw / 2, y - hpx * 0.58 + sh].map((v) => Math.round(v));
+  };
   // p3d-031 (SYS-001): the depth-pipeline audit hook — frames rendered,
   // jobs pushed with a valid finite depth key, jobs refused for a bad key
   window.__tdJobStats = () => JSON.stringify(jobStats);
@@ -2219,9 +2296,9 @@ if (HARNESS) {
     for (let b = b0; b <= b1; b++) for (const o of obstacleBlocks(b * OB_STEP)) {
       const od = obstacleDist(o), rel = od - G.playerDist;
       if (rel < -10 || rel > 60) continue;
-      const wob = o.type === 'car' ? Math.sin(G.time * 0.7 + o.seed) * 0.05 : 0;
+      // p3d-064: use the same live lanes as rendering and collision.
       const lane = obstacleLane(o);
-      const p = projectSprite(Math.max(rel, 0.5), lane + wob, 0);
+      const p = projectSprite(Math.max(rel, 0.5), lane, 0);
       let r;
       if (o.type === 'car') {
         const wpx = p.w * 0.50, hpx = wpx * 0.55;
@@ -2230,12 +2307,12 @@ if (HARNESS) {
         const wpx = p.w * 0.70, hpx = p.scale * PROJ_H * Y_FACTOR * 0.16;
         r = [p.x - wpx * 0.55, p.y - hpx, p.x + wpx * 0.55, p.y];
       } else {
-        const hpx = p.scale * PROJ_H * Y_FACTOR * 0.14, sw = hpx * 1.15;
+        const hpx = p.scale * PROJ_H * Y_FACTOR * 0.14, sw = hpx * 1.2692; // 0.9 + aspect/2 union
         r = [p.x - sw, p.y - hpx, p.x + sw, p.y];
       }
       out.obstacles.push({
         d: Math.round(od), rel: +rel.toFixed(1), lane: +lane.toFixed(3), type: o.type,
-        rect: r.map((v) => Math.round(v)), halfRoad: +obstacleHalfRoad(o).toFixed(4),
+        rect: r.map((v) => Math.round(v)), halfRoad: +obstacleHalfRoad(o, rel).toFixed(4),
       });
     }
     return JSON.stringify(out);

@@ -8,6 +8,28 @@ const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
 const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
+const sceneSpriteBounds = new Map();
+// Alpha-visible bounds are the visual-size source of truth for collision QA,
+// including p3d-080's flying and settled debris frames.
+function spriteAlphaBounds(key) {
+  let bounds = sceneSpriteBounds.get(key);
+  if (bounds) return bounds;
+  const im = ART[key];
+  if (!imgReady(im)) return { x:0, y:0, w:1, h:1 };
+  const scan = document.createElement('canvas');
+  scan.width = im.naturalWidth; scan.height = im.naturalHeight;
+  const sc = scan.getContext('2d', { willReadFrequently:true });
+  sc.drawImage(im, 0, 0);
+  const data = sc.getImageData(0, 0, scan.width, scan.height).data;
+  let x0=scan.width,y0=scan.height,x1=0,y1=0;
+  for(let y=0;y<scan.height;y++)for(let x=0;x<scan.width;x++)if(data[(y*scan.width+x)*4+3]>8){
+    x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+1);y1=Math.max(y1,y+1);
+  }
+  if(x1<=x0||y1<=y0){x0=0;y0=0;x1=scan.width;y1=scan.height;}
+  bounds={x:x0/scan.width,y:y0/scan.height,w:(x1-x0)/scan.width,h:(y1-y0)/scan.height};
+  sceneSpriteBounds.set(key,bounds);
+  return bounds;
+}
 let sceneLampArt = null;
 function lampSprite(){
   if(sceneLampArt)return sceneLampArt;
@@ -19,8 +41,7 @@ function lampSprite(){
   c.globalCompositeOperation='source-over';sceneLampArt=cv;return cv;
 }
 
-function carSpriteDraw(key, im, screenWidth, screenHeight) {
-  if (!key.startsWith('car-')) return {im,x:0,y:0,w:screenWidth,h:screenHeight};
+function carTrimArt(key, im) {
   let art=sceneCarArt.get(key);
   if(!art){
     const scan=document.createElement('canvas');scan.width=im.naturalWidth;scan.height=im.naturalHeight;
@@ -35,6 +56,21 @@ function carSpriteDraw(key, im, screenWidth, screenHeight) {
     art={source,mip:null,x:x0/scan.width,y:y0/scan.height,w:source.width/scan.width,h:source.height/scan.height};
     sceneCarArt.set(key,art);
   }
+  return art;
+}
+// p3d-064: trimmed drawn-width fraction of a car frame (0..1 of the nominal
+// sprite width), for collision boxes that never exceed the visible pixels.
+// Shares carSpriteDraw's alpha-bbox scan, so the box always tracks the art.
+function carTrimFrac(key) {
+  if (!key.startsWith('car-')) return 1;
+  const im = ART[key];
+  if (!imgReady(im)) return 1;
+  return carTrimArt(key, im).w;
+}
+
+function carSpriteDraw(key, im, screenWidth, screenHeight) {
+  if (!key.startsWith('car-')) return {im,x:0,y:0,w:screenWidth,h:screenHeight};
+  const art=carTrimArt(key,im);
   const w=screenWidth*art.w,h=screenHeight*art.h;
   let source=art.source;
   if(w<96){
@@ -62,6 +98,11 @@ function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, op
   const draw=carSpriteDraw(key,im,sw,sh),dx=x+draw.x,dy=y+draw.y;
   if (![dx, dy, draw.w, draw.h].every(Number.isFinite)) { sceneStats.invalid++; return; }
   if (draw.w < 1 || draw.h < 1 || dx > W || dx + draw.w < 0 || dy > H || dy + draw.h < 0) { sceneStats.culled++; return; }
+  // p3d-064: harness-only capture of the TRUE drawn rect (post-trim, post-cap)
+  // so collision-box-vs-visual assertions measure the actual pixels, not the
+  // nominal sprite box. Zero cost when the flag is off.
+  if (window.__tdRectCap) window.__tdRectCap.push({key, rel: +rel.toFixed(2), lateral: +lateral.toFixed(3),
+    rect: [dx, dy, dx + draw.w, dy + draw.h].map((v) => Math.round(v))});
   const grounded = key.startsWith('car-') || key.startsWith('tree-') || key.startsWith('person-') ||
     key === 'lamp-night' || key === 'kanban-night' || key === 'barricade' || key === 'cone' || key === 'nitro-bottle';
   if (grounded && rel < 380) {
