@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 let sceneLampArt = null;
@@ -416,38 +416,6 @@ function sceneCrossroadJobs(){
     c.strokeStyle='#252b37';c.lineWidth=Math.max(2,foot.w*.012);c.beginPath();c.moveTo(foot.x,foot.y);c.lineTo(top.x,top.y);c.stroke();
     const p=projectSprite(rel,side*1.27,-.58);c.fillStyle=t.red?'#ff304e':'#44ef83';c.beginPath();c.arc(p.x,p.y,Math.max(2,p.w*.025),0,Math.PI*2);c.fill();
   });
-}
-
-function sceneSecondaryHighwayJobs(){
-  for(const side of [-1,1]){
-    // Keep the near road at the shared 20 m resolution, then merge the final
-    // horizon stretch into longer projected slabs. At that depth the joins
-    // collapse to only a few pixels, so extra 20 m jobs add no visible detail
-    // and can push busy city frames beyond the bounded render queue.
-    for(let rel=20;rel<1200;rel+=SEG_LEN){pushJob(rel,c=>{
-      const visibility=sceneWeights(G.playerDist+rel).city;if(visibility<.08)return;
-      // The final quad continues to the 1.6 km horizon in one piece; its far
-      // joins would be sub-pixel, so subdividing it only bloats the job queue.
-      const span=rel===1180?420:SEG_LEN;
-      const a=projectSprite(rel,side*3.35,0),b=projectSprite(rel+span,side*3.35,0);
-      const aw=a.w*.42,bw=b.w*.42;
-      sceneQuad(c,[[b.x-bw,b.y],[b.x+bw,b.y],[a.x+aw,a.y],[a.x-aw,a.y]],'#191f2a');
-      c.strokeStyle='#d0c8a7';c.lineWidth=Math.max(1,a.w*.006);c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();
-      sceneEffectsStats.secondaryRoadSegments++;
-    });}
-    // p3d-040: traffic traverses a full far-to-behind-camera lifecycle. The
-    // wrap happens while the car is already invisible, so it never teleports
-    // from the far horizon straight into the near field.
-    const cycle=1650,phase=((G.raceTime*24+(side>0?825:0))%cycle+cycle)%cycle;
-    const carRel=1500-phase;
-    sceneEffectsStats.secondaryTrafficMinRel=Math.min(sceneEffectsStats.secondaryTrafficMinRel,carRel);
-    sceneEffectsStats.secondaryTrafficMaxRel=Math.max(sceneEffectsStats.secondaryTrafficMaxRel,carRel);
-    if(carRel>2&&carRel<1600)pushJob(carRel,c=>{
-      const visibility=sceneWeights(G.playerDist+carRel).city;if(visibility<.08)return;
-      const base=side<0?'car-van':'car-sedan',frame=trafficFrame(base,carRel,side*3.35);
-      sceneSprite(c,frame.key,carRel,side*3.35,.42,null,null,trafficFrameOptions(frame.direction,playerWpx()*.72));
-    });
-  }
 }
 
 // Two clipped triangles map an image into a real projected quad. Transform

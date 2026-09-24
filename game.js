@@ -1641,7 +1641,7 @@ function frame(now) {
 
 function render() {
   if (!artReady) return;
-  Object.keys(sceneEffectsStats).forEach(k=>sceneEffectsStats[k]=(k==='bridgeMemberMinPx'||k==='treeWorldGap'||k==='secondaryTrafficMinRel')?999:(k==='secondaryTrafficMaxRel'?-999:0));
+  Object.keys(sceneEffectsStats).forEach(k=>sceneEffectsStats[k]=(k==='bridgeMemberMinPx'||k==='treeWorldGap')?999:0);
   const env = getEnv(G.playerDist);
   projectFrame();
   ctx.save();
@@ -1657,7 +1657,7 @@ function render() {
   sceneHighWallJobs();
   sceneRailJobs();
   sceneGateJobs();
-  sceneSecondaryHighwayJobs(); sceneCrossroadJobs(); sceneSkidJobs();
+  sceneCrossroadJobs(); sceneSkidJobs();
   rivalJobs(); obstacleJobs(); nitroJobs();
   runJobs();
   ctx.restore();
@@ -1943,7 +1943,7 @@ if (HARNESS) {
     playerWidth: +playerWpx().toFixed(2), laneWidth: +(roadHalfPxAtCar()*2/3).toFixed(2),
     trafficOrientation: 'player-relative-frames', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
     trafficPartialMaxRel: TRAFFIC_PARTIAL_MAX_REL, trafficPartialMinOffset: TRAFFIC_PARTIAL_MIN_OFFSET,
-    trafficMaxPlayerRatio: .92, secondaryRoadRange: [20,1600], secondaryTrafficLifecycle: [-150,1500],
+    trafficMaxPlayerRatio: .92,
     opponents: G.rivals.length, particles: G.sparks.length, skids:G.skids.length,
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
