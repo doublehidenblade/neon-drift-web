@@ -1,5 +1,5 @@
 {
-  "generated": "p3d-032 rebuild it3 2026-09-21 (canvas bridge-moon deleted; mountains-night smudge re-patched)",
+  "generated": "p3d-080 original hit-state sprite additions 2026-09-24",
   "note": "AI-generated art (media pipeline), NOT designer-drawn. See hidden_files/art32/TECHNIQUE.md",
   "assets": [
     {
@@ -489,6 +489,38 @@
         435
       ],
       "bytes": 98306
+    },
+    {
+      "file": "assets32/cone-flying.webp",
+      "size": [
+        320,
+        220
+      ],
+      "bytes": 13228
+    },
+    {
+      "file": "assets32/cone-crushed.webp",
+      "size": [
+        320,
+        220
+      ],
+      "bytes": 8314
+    },
+    {
+      "file": "assets32/barricade-flying.webp",
+      "size": [
+        320,
+        220
+      ],
+      "bytes": 9360
+    },
+    {
+      "file": "assets32/barricade-broken.webp",
+      "size": [
+        320,
+        220
+      ],
+      "bytes": 15702
     }
   ]
 }

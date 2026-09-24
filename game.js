@@ -649,6 +649,7 @@ function resetRace() {
   G.lapTimes = []; G.lapStartT = 0; G.lastLap = 0; G.bestLap = 0; G.sector = -1;
   G.collisions = 0; G.scrapeAccum = 0;
   civilianMotion.clear();
+  propHits.clear();
   G.drift = 0; G.driftKey = false; G.driftEvents = 0; G.driftT = 0; G.driftBoostT = 0; G.smokeT = 0;
   G.rivals = [];
   for (let i = 0; i < TUNE.rivalCount; i++) {
@@ -1049,6 +1050,7 @@ const LANES = [-0.55, 0, 0.55];
 const OB_STEP = 230;      // nominal block spacing (m)
 const CIVILIAN_DEPTH_HALF = 2.4;
 const civilianMotion = new Map();
+const propHits = new Map();
 function obstacleBlocks(bd) {
   const out = [];
   const b = Math.round(bd / OB_STEP);
@@ -1142,7 +1144,15 @@ function updateCivilianCollisions(dt) {
       x: obstacleLane(o), vd: TUNE.trafficSpeed + state.forwardVelocity,
       vx: state.lateralVelocity, halfWidth: obstacleHalfRoad(o), halfDepth: CIVILIAN_DEPTH_HALF };
   });
-  resolveCivilianContacts(bodies, dt);
+  const contacts = resolveCivilianContacts(bodies, dt);
+  for (const contact of contacts) {
+    const a = bodies.find(body => body.id === contact.a);
+    const b = bodies.find(body => body.id === contact.b);
+    const prop = a?.fixed ? a : b?.fixed ? b : null;
+    const car = prop === a ? b : a;
+    if (prop?.source && prop.source.type !== 'car')
+      emitPropHit(prop.source, Math.sign(car.x - prop.x) || 1, 'civilian');
+  }
   for (const body of bodies) if (!body.fixed) {
     const state = civilianState(body.source);
     const base = body.source.d + TUNE.trafficSpeed * G.raceTime;
@@ -1155,7 +1165,7 @@ function updateCivilianCollisions(dt) {
     state.forwardVelocity += (0 - state.forwardVelocity) * Math.min(1, 0.45 * dt);
   }
 }
-function hitObstacle() {
+function hitObstacle(o) {
   G.hearts -= 1; G.collisions++; // telemetry: honest collision count for the non-god run
   G.invulnT = 2.0; // ~2s invulnerability: one obstacle can't chain-kill
   G.hitFlash = 1;
@@ -1165,6 +1175,7 @@ function hitObstacle() {
   setImpact('obstacle',G.playerX>=0?-1:1,severity);
   G.recoverT = 1.4;
   spawnSparks();
+  if (o && o.type !== 'car') emitPropHit(o, Math.sign(o.lane - G.playerX) || 1, 'player');
   AudioSys.beep(150, 0.3);
   if (G.hearts <= 0) {
     G.state = 'gameover';
@@ -1194,6 +1205,15 @@ function spawnSparks() {
       col: cols[i % cols.length],
     });
   }
+}
+
+// p3d-080 presentation hook. Collision ownership stays in p3d-062: its
+// existing player and civilian contact events each call this function once.
+function emitPropHit(o, side, source) {
+  const key = civilianKey(o);
+  if (propHits.has(key)) return;
+  propHits.set(key, { key, type: o.type, d: o.d, lane: o.lane,
+    side: Math.sign(side) || 1, source, started: G.time });
 }
 function updateSparks(dt) {
   for (let i = G.sparks.length - 1; i >= 0; i--) {
@@ -1243,7 +1263,7 @@ function checkObstacles() {
       // (Craig 2026-09-20: invisible hits).
       const rel = od - G.playerDist;
       if (Math.abs(rel - 27) < 5 && Math.abs(obstacleLane(o) + wob - pC) < pHalf + obstacleHalfRoad(o)) {
-        hitObstacle();
+        hitObstacle(o);
         return;
       }
     }
@@ -1306,6 +1326,25 @@ function drawCones(o, rel, fade) {
     for (let i = -1; i <= 1; i++) sceneSprite(c, 'cone', rel, o.lane + i * height * .9 / p.w, width / p.w);
   };
 }
+function drawPropHit(hit, rel) {
+  return c => {
+    const age = Math.max(0, G.time - hit.started);
+    const flying = age < .72;
+    const t = Math.min(1, age / .72);
+    const lane = hit.lane + hit.side * (.08 + .48 * t);
+    const p = projectSprite(rel, lane, 0);
+    const key = hit.type === 'barrier'
+      ? (flying ? 'barricade-flying' : 'barricade-broken')
+      : (flying ? 'cone-flying' : 'cone-crushed');
+    const im = ART[key];
+    if (!imgReady(im)) return;
+    const baseW = hit.type === 'barrier' ? p.w * .46 : p.scale * PROJ_H * Y_FACTOR * .30;
+    const w = baseW * (flying ? 1 : .82);
+    const h = w * im.naturalHeight / im.naturalWidth;
+    const lift = flying ? Math.sin(Math.PI * t) * p.scale * PROJ_H * .12 : 0;
+    c.drawImage(im, p.x - w / 2, p.y - h - lift, w, h);
+  };
+}
 function obstacleJobs() {
   const b0 = Math.floor(G.playerDist / OB_STEP), b1 = Math.floor((G.playerDist + 2700) / OB_STEP);
   for (let b = b0; b <= b1; b++) {
@@ -1319,6 +1358,13 @@ function obstacleJobs() {
       if (nearCulled(rel) || rel > 2600) continue; // rendering: the one global policy
       const fade = farFade(rel);
       if (fade <= 0) continue;
+      const hit = propHits.get(civilianKey(o));
+      if (hit) {
+        // Equal-depth debris executes before a car and therefore stays below
+        // it; the scale still comes from the shared perspective projection.
+        pushJob(rel + .01, drawPropHit(hit, rel));
+        continue;
+      }
       if (o.type === 'car') pushJob(rel, drawTrafficCar(o, rel, fade));
       else if (o.type === 'barrier') pushJob(rel, drawBarrier(o, rel, fade));
       else pushJob(rel, drawCones(o, rel, fade));
@@ -1869,6 +1915,8 @@ const ART_FILES = {
   'car-sport-left': 'car-sport-left.webp', 'car-sport-straight': 'car-sport-straight.webp', 'car-sport-right': 'car-sport-right.webp',
   'tree-pine': 'tree-pine.webp', 'tree-broad': 'tree-broad.webp',
   'cone': 'cone.webp', 'barricade': 'barricade.webp',
+  'cone-flying': 'cone-flying.webp', 'cone-crushed': 'cone-crushed.webp',
+  'barricade-flying': 'barricade-flying.webp', 'barricade-broken': 'barricade-broken.webp',
   'nitro-bottle': 'nitro-bottle.webp', 'lamp-night': 'lamp-night.webp',
   'gantry-night': 'gantry-night.webp', 'kanban-night': 'kanban-night.webp',
   'start-gantry-night': 'start-gantry-night.webp',

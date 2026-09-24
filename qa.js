@@ -21,6 +21,24 @@ if (HARNESS) {
     }
     throw new Error('No stationary collision fixture found');
   };
+  window.__tdFindProp = type => {
+    for (let d = 460; d < LAP_LEN; d += OB_STEP) {
+      const o = obstacleBlocks(d).find(x => x.type === type);
+      if (o) return { distance: o.d - 27, d: o.d, x: o.lane, type: o.type, seed: o.seed };
+    }
+    throw new Error(`No ${type} fixture found`);
+  };
+  window.__tdPropHit = (fixture, age = .36, side = 1, source = 'player') => {
+    const o = { d: fixture.d, lane: fixture.x, type: fixture.type, seed: fixture.seed };
+    emitPropHit(o, side, source);
+    const hit = propHits.get(civilianKey(o));
+    hit.started = G.time - age;
+    render();
+    return { ...hit, age, count: propHits.size, depthBias: .01 };
+  };
+  window.__tdPropHits = () => [...propHits.values()].map(hit => ({
+    ...hit, age: +(G.time - hit.started).toFixed(3), grounded: G.time - hit.started >= .72,
+  }));
   window.__tdPlay = () => { qaFrozen = false; lastT = performance.now(); acc = 0; };
   window.__tdFreeze = () => { qaFrozen = true; };
   window.__tdFrame = () => { render(); return { jobs: jobStats.lastCount, badKey: jobStats.badKey, ...sceneStats }; };
