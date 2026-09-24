@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, portalBaseError:0, treeWorldGap:999 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, secondaryRoadSegments:0, secondaryTrafficMinRel:999, secondaryTrafficMaxRel:-999, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 let sceneLampArt = null;
@@ -220,9 +220,27 @@ function drawSceneRoad(env) {
     // along z and therefore converge at the horizon.
     if(sw.water>.5){
       const waterQuad=bridge?quad(-40,40):quayRight?quad(1.65,40):quayLeft?quad(-40,-1.65):quad(-40,40);
+      // p3d-065: the old code only ever drew the flat #0b2230/#17364b canvas
+      // fill — the painted tile-water-night asset was never used, so water
+      // never looked better than flat canvas. The authored tile (night waves
+      // with neon reflections) now covers every water quad, world-anchored
+      // through sceneTexture so its ripples share the road's projection and
+      // converge at the horizon; driving through the world-anchored strips
+      // gives the water its motion. The legacy flat base stays behind the
+      // tile: a slow/missing asset degrades to the old fill, never to a
+      // hole. Everything stays 100% opaque.
       sceneQuad(ctx,waterQuad,'#0b2230');
-      const phase=((bd+G.time*12)%100+100)%100;if(phase<SEG_LEN)sceneQuad(ctx,waterQuad,'#17364b');
-      sceneEffectsStats.waterPhase=+phase.toFixed(2);
+      // Textured path (counted for regression coverage): when the tile asset
+      // is not ready this degrades to the flat base above, never to a hole.
+      // LOD: the projected texture is only worth its clip+transform+drawImage
+      // cost when the quad is tall enough on screen for the tile's detail to
+      // be visible; distant slivers keep the flat base (already drawn above).
+      const waterH=Math.max(Math.abs(waterQuad[2][1]-waterQuad[0][1]),Math.abs(waterQuad[3][1]-waterQuad[1][1]));
+      if (waterH>=10 && imgReady(ART['tile-water-night'])) {
+        sceneTexture(ctx,'tile-water-night',waterQuad,1,bd);
+        sceneEffectsStats.waterTexturedQuads++;
+      }
+      sceneEffectsStats.waterPhase=+(((bd+G.time*12)%100+100)%100).toFixed(2);
       sceneEffectsStats.waterProjectedQuads++;
     }
     if (b.y - a.y > 2 && !bridge) {
