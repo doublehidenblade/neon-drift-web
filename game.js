@@ -606,7 +606,7 @@ function resetRace() {
   G.collisions = 0; G.scrapeAccum = 0;
   G.drift = 0; G.driftKey = false; G.driftEvents = 0; G.driftT = 0; G.driftBoostT = 0; G.smokeT = 0;
   G.rivals = [];
-  for (let i = 0; i < TUNE.rivalCount; i++) G.rivals.push({ x: (rnd() * 1.2 - 0.6), color: RCOL[i % RCOL.length], wob: rnd() * 6.28 });
+  for (let i = 0; i < TUNE.rivalCount; i++) G.rivals.push({ x: (rnd() * 1.2 - 0.6), color: RCOL[i % RCOL.length], wob: rnd() * 6.28, passT: null, passD: null, passSpeed: null });
 }
 
 /* ---------- projection ---------- */
@@ -908,17 +908,30 @@ function drawPlayerCar() {
 }
 
 function rivalDist(i) {
-  // rivals hold a slowly-closing gap ahead of the player until their pass
-  // point, then fall behind CONTINUOUSLY: a smooth drive-by from +25m ahead
-  // to 60m behind over ~85m of player travel — no teleport, no jumping
+  // p3d-063: rivals hold a slowly-closing gap ahead of the player until
+  // their pass point; past it the rival keeps driving at its own authored
+  // speed — the approach pace (0.88 of the player's speed at the pass
+  // instant, minimum 25 m/s), snapshotted once with its position, then
+  // constant, so it never reacts to being overtaken. The player pulls away
+  // at the genuine speed differential. The old scripted drive-by froze the
+  // rival dead at passAt+25 and swept rel from +25 to -60 over 85m of player
+  // travel, which read as the car slamming backward past the camera
+  // ("retreats back so quickly it's unnatural" — Craig 2026-09-23).
   const spread = (i + 1) / (G.rivals.length + 1);
   const authored = PASS_FRAC[i] || (0.12 + spread * 0.78);
   const passAt = clamp(authored * TUNE.rivalPace, 0.08, 0.98) * TOTAL;
-  if (G.playerDist >= passAt) {
-    const over = G.playerDist - passAt;
-    return G.playerDist + Math.max(-60, 25 - over);
-  }
+  const r = G.rivals[i];
+  if (r.passT != null) return r.passD + r.passSpeed * (G.raceTime - r.passT);
   const gap = Math.max(25, (passAt - G.playerDist) * 0.12);
+  if (G.playerDist >= passAt) {
+    // first evaluation past the pass point: snapshot the CURRENT position
+    // (exactly the pre-pass value — no backward jump on coarse steps) and
+    // the own-speed; both frozen from here on.
+    r.passT = G.raceTime;
+    r.passD = G.playerDist + gap;
+    r.passSpeed = Math.max(0.88 * G.speedMs, 25);
+    return r.passD;
+  }
   return G.playerDist + gap;
 }
 const TRAFFIC_PARTIAL_MAX_REL = 120;
@@ -1886,6 +1899,17 @@ if (HARNESS) {
   window.__tdTunnelZones = () => tunnelZones().map((z) => z.slice());
   window.__tdSceneWeights = d => ({...sceneWeights(d)});
   window.__tdProjectionState = () => ({width:W,height:H,projectionHeight:PROJ_H,cameraHeight:+cameraHeight().toFixed(3),horizon:HORIZON,roadHalf:+roadHalfPxAtCar().toFixed(2),playerWidth:+playerWpx().toFixed(2),playerY:+(H*.815).toFixed(2)});
+  // p3d-063: harness-only rival telemetry — absolute distance, relative
+  // distance and the snapshotted post-pass own-speed, so CI can assert an
+  // overtaken rival keeps driving at its own speed instead of freezing.
+  window.__tdRivals = () => G.rivals.map((r, i) => {
+    const d = rivalDist(i);
+    return {
+      i, d: +d.toFixed(2), rel: +(d - G.playerDist).toFixed(2),
+      passT: r.passT, passSpeed: r.passSpeed == null ? null : +r.passSpeed.toFixed(2),
+      t: +G.raceTime.toFixed(3),
+    };
+  });
   window.__tdWorldEffects = () => ({...sceneEffectsStats});
   window.__tdVisualState = () => ({
     playerWidth: +playerWpx().toFixed(2), laneWidth: +(roadHalfPxAtCar()*2/3).toFixed(2),
