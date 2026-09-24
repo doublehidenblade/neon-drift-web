@@ -1443,7 +1443,13 @@ function update(dt) {
     G.driftT = 0;
   }
   if (G.driftBoostT > 0) G.driftBoostT -= dt;
-  const yawTarget = G.steerVis * (0.18 + G.steerHold * 0.58 + G.drift * 0.24);
+  // p3d-071: clamp visual yaw so a drift never reaches the +/-90deg side
+  // frames (player-v02/v08) — a car facing sideways reads as a bug.
+  const turnYaw = G.steerVis * (0.18 + G.steerHold * 0.58);
+  const driftYaw = G.steerVis * G.drift * 0.24;
+  let yawTarget = turnYaw + driftYaw;
+  if (yawTarget > 0.8) yawTarget = 0.8;
+  else if (yawTarget < -0.8) yawTarget = -0.8;
   G.yawVis += (yawTarget - G.yawVis) * Math.min(1, (G.inputSteer ? 6 : 3.8) * dt);
   G.impactYaw += (0 - G.impactYaw) * Math.min(1, 4 * dt);
   const steerVel = G.inputSteer * TUNE.turnPower - segNow.curve * clamp(G.speedMs / TOP_MS, 0, 1.2) * 0.35
