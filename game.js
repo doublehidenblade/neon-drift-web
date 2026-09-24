@@ -921,19 +921,18 @@ function rivalDist(i) {
   const gap = Math.max(25, (passAt - G.playerDist) * 0.12);
   return G.playerDist + gap;
 }
-function trafficTravelAngle(rel,lateral) {
-  // Screen-space path direction is used only to choose an authored frame.
-  // Use the road centerline tangent: projecting the same lateral offset at
-  // two depths adds vanishing-point convergence and falsely labels a straight
-  // lane car as turning. Rotating a billboard makes it appear to roll.
-  const p0=projectSprite(rel,0,0),p1=projectSprite(rel+18,0,0);
-  const dx=p1.x-p0.x,dy=p0.y-p1.y;
-  return Math.atan2(dx,Math.max(1,dy));
-}
-function trafficFrame(base,rel,lateral) {
-  const angle=trafficTravelAngle(rel,lateral);
-  const direction=angle<-.018?'left':angle>.018?'right':'straight';
-  return {key:`${base}-${direction}`,direction,angle};
+const TRAFFIC_PARTIAL_MAX_REL = 120;
+const TRAFFIC_PARTIAL_MIN_OFFSET = .28;
+function trafficFrame(base,rel,lateral,playerLateral=G.playerX) {
+  // The camera/player's view of another car depends on their relative pose,
+  // not the road tangent or that car's ordinary steering. Distant traffic is
+  // always a clean tail. Only a close car viewed from across a meaningful
+  // lateral offset exposes one of the authored, slight three-quarter sides.
+  const relativeLateral=lateral-playerLateral;
+  let direction='straight';
+  if(rel<=TRAFFIC_PARTIAL_MAX_REL&&Math.abs(relativeLateral)>=TRAFFIC_PARTIAL_MIN_OFFSET)
+    direction=relativeLateral>0?'left':'right';
+  return {key:`${base}-${direction}`,direction,relativeLateral};
 }
 function trafficFrameOptions(direction,maxScreenWidth) {
   // Every generated frame uses the same transparent canvas and ground pivot.
@@ -1890,12 +1889,13 @@ if (HARNESS) {
   window.__tdWorldEffects = () => ({...sceneEffectsStats});
   window.__tdVisualState = () => ({
     playerWidth: +playerWpx().toFixed(2), laneWidth: +(roadHalfPxAtCar()*2/3).toFixed(2),
-    trafficOrientation: 'directional-frames', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
+    trafficOrientation: 'player-relative-frames', trafficKeys: ['car-sedan','car-taxi','car-van','car-sport'],
+    trafficPartialMaxRel: TRAFFIC_PARTIAL_MAX_REL, trafficPartialMinOffset: TRAFFIC_PARTIAL_MIN_OFFSET,
     trafficMaxPlayerRatio: .92, secondaryRoadRange: [20,1600], secondaryTrafficLifecycle: [-150,1500],
     opponents: G.rivals.length, particles: G.sparks.length, skids:G.skids.length,
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
-  window.__tdTrafficFrame = (base,rel,lateral) => trafficFrame(base,rel,lateral);
+  window.__tdTrafficFrame = (base,rel,lateral,playerLateral) => trafficFrame(base,rel,lateral,playerLateral);
   window.__tdForceImpact=(kind,speed,angle)=>{G.speedMs=speed;setImpact(kind,angle,speed/TOP_MS);spawnSparks();render();return window.__tdVisualState();};
   window.__tdSetNitro = (n) => { G.nitro = n; if (n < 100) G.nitroOn = false; };
   window.__tdSparks = () => G.sparks.length;

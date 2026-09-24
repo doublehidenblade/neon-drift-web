@@ -320,7 +320,7 @@
         384,
         320
       ],
-      "bytes": 62508
+      "bytes": 93214
     },
     {
       "file": "assets32/car-sedan-right.webp",
@@ -328,7 +328,7 @@
         384,
         320
       ],
-      "bytes": 63376
+      "bytes": 92780
     },
     {
       "file": "assets32/car-sedan-straight.webp",
@@ -344,7 +344,7 @@
         384,
         320
       ],
-      "bytes": 58862
+      "bytes": 76718
     },
     {
       "file": "assets32/car-sport-right.webp",
@@ -352,7 +352,7 @@
         384,
         320
       ],
-      "bytes": 70198
+      "bytes": 76236
     },
     {
       "file": "assets32/car-sport-straight.webp",
@@ -368,7 +368,7 @@
         384,
         320
       ],
-      "bytes": 89932
+      "bytes": 88784
     },
     {
       "file": "assets32/car-taxi-right.webp",
@@ -376,7 +376,7 @@
         384,
         320
       ],
-      "bytes": 90760
+      "bytes": 87988
     },
     {
       "file": "assets32/car-taxi-straight.webp",
@@ -392,7 +392,7 @@
         384,
         320
       ],
-      "bytes": 69908
+      "bytes": 96502
     },
     {
       "file": "assets32/car-van-right.webp",
@@ -400,7 +400,7 @@
         384,
         320
       ],
-      "bytes": 66860
+      "bytes": 96424
     },
     {
       "file": "assets32/car-van-straight.webp",
