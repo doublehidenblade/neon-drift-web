@@ -648,6 +648,7 @@ function resetRace() {
   G.shakeT = 0; G.sparks = []; G.skids = []; G.impact = null; G.sparkSeq = 0;
   G.lapTimes = []; G.lapStartT = 0; G.lastLap = 0; G.bestLap = 0; G.sector = -1;
   G.collisions = 0; G.scrapeAccum = 0;
+  civilianMotion.clear();
   G.drift = 0; G.driftKey = false; G.driftEvents = 0; G.driftT = 0; G.driftBoostT = 0; G.smokeT = 0;
   G.rivals = [];
   for (let i = 0; i < TUNE.rivalCount; i++) {
@@ -1046,6 +1047,8 @@ function playerPos() {
 // moderate and a full 3-lane wall is never placed — there is always a gap.
 const LANES = [-0.55, 0, 0.55];
 const OB_STEP = 230;      // nominal block spacing (m)
+const CIVILIAN_DEPTH_HALF = 2.4;
+const civilianMotion = new Map();
 function obstacleBlocks(bd) {
   const out = [];
   const b = Math.round(bd / OB_STEP);
@@ -1069,7 +1072,89 @@ function obstacleBlocks(bd) {
   }
   return out;
 }
-function obstacleDist(o) { return o.type === 'car' ? o.d + TUNE.trafficSpeed * G.raceTime : o.d; }
+function civilianKey(o) { return `${o.seed}:${o.d}`; }
+function civilianState(o) {
+  const key = civilianKey(o);
+  let state = civilianMotion.get(key);
+  if (!state) {
+    state = { dOffset: 0, laneOffset: 0, forwardVelocity: 0, lateralVelocity: 0 };
+    civilianMotion.set(key, state);
+  }
+  return state;
+}
+function obstacleDist(o) {
+  if (o.type !== 'car') return o.d;
+  return o.d + TUNE.trafficSpeed * G.raceTime + civilianState(o).dOffset;
+}
+function obstacleLane(o) { return o.lane + (o.type === 'car' ? civilianState(o).laneOffset : 0); }
+
+// Swept circle/box-style response in road coordinates. This is deliberately
+// independent of rendering so the deterministic harness can exercise
+// maximum-speed contacts without advancing a real race. Bodies are mutated.
+function resolveCivilianContacts(bodies, dt) {
+  const contacts = [];
+  for (const b of bodies) {
+    b.prevD = b.d;
+    if (!b.fixed) {
+      b.d += b.vd * dt;
+      b.x += b.vx * dt;
+      b.vx *= Math.max(0, 1 - 2.8 * dt);
+    }
+  }
+  for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    const a = bodies[i], b = bodies[j];
+    if (a.fixed && b.fixed) continue;
+    const moving = a.fixed ? b : a, other = a.fixed ? a : b;
+    const before = moving.prevD - other.prevD, after = moving.d - other.d;
+    const depth = (moving.halfDepth || CIVILIAN_DEPTH_HALF) + (other.halfDepth || CIVILIAN_DEPTH_HALF);
+    const sweptLong = Math.abs(after) <= depth || before * after <= 0;
+    const width = moving.halfWidth + other.halfWidth;
+    if (!sweptLong || Math.abs(moving.x - other.x) >= width) continue;
+    const side = Math.sign(moving.x - other.x) || (moving.id < other.id ? -1 : 1);
+    const penetration = width - Math.abs(moving.x - other.x);
+    const closingSpeed = Math.abs(moving.vd - other.vd);
+    // Preserve the contact plane and exchange/absorb forward speed. The small
+    // lateral impulse then produces visible deflection over subsequent frames
+    // rather than instant lane teleportation.
+    moving.d = other.d + Math.sign(before || -1) * depth;
+    moving.x += side * Math.min(0.025, penetration * 0.12);
+    if (closingSpeed > 2) moving.vx += side * 0.72;
+    if (other.fixed) moving.vd = Math.min(moving.vd, 0);
+    else {
+      const average = (moving.vd + other.vd) * 0.5;
+      moving.vd = average; other.vd = average;
+      if (closingSpeed > 2) other.vx -= side * 0.72;
+    }
+    contacts.push({ a: a.id, b: b.id });
+  }
+  return contacts;
+}
+
+function updateCivilianCollisions(dt) {
+  const b0 = Math.floor((G.playerDist - 200) / OB_STEP), b1 = Math.floor((G.playerDist + 2800) / OB_STEP);
+  const entries = [];
+  for (let block = b0; block <= b1; block++) for (const o of obstacleBlocks(block * OB_STEP)) entries.push(o);
+  const bodies = entries.map(o => {
+    if (o.type !== 'car') return { id: civilianKey(o), source: o, fixed: true, d: o.d, x: o.lane,
+      vd: 0, vx: 0, halfWidth: obstacleHalfRoad(o), halfDepth: o.type === 'barrier' ? 1.3 : 0.8 };
+    const state = civilianState(o);
+    return { id: civilianKey(o), source: o, fixed: false, d: obstacleDist(o) - TUNE.trafficSpeed * dt,
+      x: obstacleLane(o), vd: TUNE.trafficSpeed + state.forwardVelocity,
+      vx: state.lateralVelocity, halfWidth: obstacleHalfRoad(o), halfDepth: CIVILIAN_DEPTH_HALF };
+  });
+  resolveCivilianContacts(bodies, dt);
+  for (const body of bodies) if (!body.fixed) {
+    const state = civilianState(body.source);
+    const base = body.source.d + TUNE.trafficSpeed * G.raceTime;
+    state.dOffset = body.d - base;
+    state.laneOffset = clamp(body.x - body.source.lane, -0.72, 0.72);
+    state.forwardVelocity = body.vd - TUNE.trafficSpeed;
+    state.lateralVelocity = body.vx;
+    // After a deflection, smoothly regain authored traffic speed. This does
+    // not alter p3d-063's ordinary, collision-free overtake behavior.
+    state.forwardVelocity += (0 - state.forwardVelocity) * Math.min(1, 0.45 * dt);
+  }
+}
 function hitObstacle() {
   G.hearts -= 1; G.collisions++; // telemetry: honest collision count for the non-god run
   G.invulnT = 2.0; // ~2s invulnerability: one obstacle can't chain-kill
@@ -1157,7 +1242,7 @@ function checkObstacles() {
       // window let hits land on sprites already pinned behind/under the car
       // (Craig 2026-09-20: invisible hits).
       const rel = od - G.playerDist;
-      if (Math.abs(rel - 27) < 5 && Math.abs(o.lane + wob - pC) < pHalf + obstacleHalfRoad(o)) {
+      if (Math.abs(rel - 27) < 5 && Math.abs(obstacleLane(o) + wob - pC) < pHalf + obstacleHalfRoad(o)) {
         hitObstacle();
         return;
       }
@@ -1198,11 +1283,12 @@ function checkRivalBump(dt) {
   }
 }
 function drawTrafficCar(o, rel, fade) {
+  const lane=obstacleLane(o);
   const maxWidth=playerWpx()*.92;
-  const projected=projectSprite(rel,o.lane,0).w*.5;
+  const projected=projectSprite(rel,lane,0).w*.5;
   sceneEffectsStats.maxTrafficPlayerRatio=Math.max(sceneEffectsStats.maxTrafficPlayerRatio,projected>0?Math.min(projected,maxWidth)/playerWpx():0);
-  const frame=trafficFrame(['car-sedan','car-taxi','car-van','car-sport'][Math.abs(o.seed) % 4],rel,o.lane);
-  return c => sceneSprite(c,frame.key,rel,o.lane,0.5,null,null,trafficFrameOptions(frame.direction,maxWidth));
+  const frame=trafficFrame(['car-sedan','car-taxi','car-van','car-sport'][Math.abs(o.seed) % 4],rel,lane);
+  return c => sceneSprite(c,frame.key,rel,lane,0.5,null,null,trafficFrameOptions(frame.direction,maxWidth));
 }
 function drawBarrier(o, rel, fade) {
   // p3d-067: the roadblock reads as a real A-frame construction barricade —
@@ -1467,6 +1553,7 @@ function update(dt) {
   }
   if (G.state !== 'racing') return;
   G.raceTime += dt;
+  updateCivilianCollisions(dt);
   // lap timing: crossing the line records the lap (the last lap records at
   // the flag — recordLap is idempotent, guarded by lastLap >= LAPS)
   const lapNow = Math.floor(G.playerDist / LAP_LEN);
@@ -2029,6 +2116,19 @@ if (HARNESS) {
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
   window.__tdTrafficFrame = (base,rel,lateral,playerLateral) => trafficFrame(base,rel,lateral,playerLateral);
+  window.__tdCivilianCollisionProbe = (kind, speed = TUNE.nitroSpeed) => {
+    const bodies = kind === 'car-car'
+      ? [
+          { id: 'rear', fixed: false, d: 0, x: 0, vd: speed, vx: 0, halfWidth: .144, halfDepth: CIVILIAN_DEPTH_HALF },
+          { id: 'front', fixed: false, d: 12, x: 0, vd: 0, vx: 0, halfWidth: .144, halfDepth: CIVILIAN_DEPTH_HALF },
+        ]
+      : [
+          { id: 'car', fixed: false, d: 0, x: 0, vd: speed, vx: 0, halfWidth: .144, halfDepth: CIVILIAN_DEPTH_HALF },
+          { id: 'barrier', fixed: true, d: 12, x: 0, vd: 0, vx: 0, halfWidth: .28, halfDepth: 1.3 },
+        ];
+    const contacts = resolveCivilianContacts(bodies, .2);
+    return { contacts, bodies: bodies.map(b => ({ id:b.id, d:+b.d.toFixed(3), x:+b.x.toFixed(3), vd:+b.vd.toFixed(3), vx:+b.vx.toFixed(3) })) };
+  };
   window.__tdForceImpact=(kind,speed,angle)=>{G.speedMs=speed;setImpact(kind,angle,speed/TOP_MS);spawnSparks();render();return window.__tdVisualState();};
   window.__tdSetNitro = (n) => { G.nitro = n; if (n < 100) G.nitroOn = false; };
   window.__tdSparks = () => G.sparks.length;
@@ -2046,7 +2146,7 @@ if (HARNESS) {
     const b0 = Math.floor((G.playerDist - 60) / OB_STEP), b1 = Math.floor((G.playerDist + 500) / OB_STEP);
     for (let b = b0; b <= b1; b++) for (const o of obstacleBlocks(b * OB_STEP)) {
       const od = obstacleDist(o);
-      if (od > G.playerDist - 60) out.push({ d: Math.round(od), lane: o.lane, type: o.type });
+      if (od > G.playerDist - 60) out.push({ d: Math.round(od), lane: +obstacleLane(o).toFixed(3), type: o.type });
     }
     return JSON.stringify(out);
   };
@@ -2072,7 +2172,8 @@ if (HARNESS) {
       const od = obstacleDist(o), rel = od - G.playerDist;
       if (rel < -10 || rel > 60) continue;
       const wob = o.type === 'car' ? Math.sin(G.time * 0.7 + o.seed) * 0.05 : 0;
-      const p = projectSprite(Math.max(rel, 0.5), o.lane + wob, 0);
+      const lane = obstacleLane(o);
+      const p = projectSprite(Math.max(rel, 0.5), lane + wob, 0);
       let r;
       if (o.type === 'car') {
         const wpx = p.w * 0.50, hpx = wpx * 0.55;
@@ -2085,7 +2186,7 @@ if (HARNESS) {
         r = [p.x - sw, p.y - hpx, p.x + sw, p.y];
       }
       out.obstacles.push({
-        d: Math.round(od), rel: +rel.toFixed(1), lane: +o.lane.toFixed(3), type: o.type,
+        d: Math.round(od), rel: +rel.toFixed(1), lane: +lane.toFixed(3), type: o.type,
         rect: r.map((v) => Math.round(v)), halfRoad: +obstacleHalfRoad(o).toFixed(4),
       });
     }
