@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 const sceneSpriteBounds = new Map();
@@ -231,6 +231,14 @@ function drawSceneRoad(env) {
   const weights=sceneWeights(G.playerDist),water=weights.water,green=weights.green;
   ctx.fillStyle = env === 'snow' ? '#a5b7c6' : '#171b24';
   ctx.fillRect(0, HORIZON, W, H - HORIZON);
+  // p3d-074: establish an opaque deep-blue water backplane all the way to
+  // the horizon in every water zone. Projected land/road/quay strips paint
+  // over it below, while far sub-pixel water can never expose the unrelated
+  // dark terrain/canvas color through a projection gap.
+  if (water > .5) {
+    ctx.fillStyle = '#071b31'; ctx.fillRect(0, HORIZON, W, H - HORIZON);
+    sceneEffectsStats.waterHorizonFills++;
+  }
   // Only front-facing road strips can be seen. Hidden descending terrain
   // never paints a second road through the crest in front of it.
   for (let n = DRAW; n >= 1; n--) {
