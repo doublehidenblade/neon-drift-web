@@ -1097,6 +1097,17 @@ function rivalJobs() {
       trafficFrameOptions(frame.direction,playerWpx()*.92)));
   });
 }
+// Harness evidence uses the same world-job path as live traffic. Keeping the
+// injected car inside the far-to-near sorter is important: drawing it directly
+// onto the completed canvas would put a farther car over the screen-space
+// player and manufacture the exact inverse of the production depth contract.
+function evidenceTrafficJob() {
+  if (!HARNESS || !window.__tdEvidenceTraffic) return;
+  const {base, rel, lateral} = window.__tdEvidenceTraffic;
+  const frame=trafficFrame(base,rel,lateral);
+  pushJob(rel,c=>sceneSprite(c,frame.key,rel,lateral,.5,null,null,
+    trafficFrameOptions(frame.direction,playerWpx()*.92)));
+}
 function playerPos() {
   let pos = 1;
   for (let i = 0; i < G.rivals.length; i++) if (rivalDist(i) > G.playerDist) pos++;
@@ -1931,7 +1942,7 @@ function render() {
   sceneGateJobs();
   sceneComplexRoadJobs();
   sceneCrossroadJobs(); sceneSkidJobs();
-  rivalJobs(); obstacleJobs(); nitroJobs();
+  rivalJobs(); evidenceTrafficJob(); obstacleJobs(); nitroJobs();
   runJobs();
   ctx.restore();
   drawPlayerCar(); drawSparks();

@@ -101,15 +101,17 @@ if (HARNESS) {
       },
     };
   };
-  // p3d-093: render one production-selected traffic frame into a stable road
-  // scene. This makes the same nearby-car pose available before and after a
-  // selector change instead of substituting an isolated sprite-sheet preview.
+  // p3d-093/p3d-099: render one production-selected traffic frame into a
+  // stable road scene. The evidence car must enter render()'s world-job sorter
+  // before the screen-space player; painting it directly after __tdCapture()
+  // incorrectly placed the farther car over the nearer player.
   window.__tdNearbyTrafficEvidence = (base = 'car-sedan', rel = 35, lateral = .16) => {
     window.__tdCapture(460, 'circuit', 0);
     const frame = trafficFrame(base, rel, lateral, G.playerX);
     window.__tdRectCap = [];
-    sceneSprite(ctx, frame.key, rel, lateral, .5, null, null,
-      trafficFrameOptions(frame.direction, playerWpx() * .92));
+    window.__tdEvidenceTraffic = {base, rel, lateral};
+    render();
+    window.__tdEvidenceTraffic = null;
     const drawn = window.__tdRectCap.find(entry => entry.key === frame.key);
     window.__tdRectCap = null;
     return { ...frame, rel, lateral, rect:drawn?.rect || null };
