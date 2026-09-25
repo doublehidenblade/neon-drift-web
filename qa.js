@@ -101,6 +101,19 @@ if (HARNESS) {
       },
     };
   };
+  // p3d-093: render one production-selected traffic frame into a stable road
+  // scene. This makes the same nearby-car pose available before and after a
+  // selector change instead of substituting an isolated sprite-sheet preview.
+  window.__tdNearbyTrafficEvidence = (base = 'car-sedan', rel = 35, lateral = .16) => {
+    window.__tdCapture(460, 'circuit', 0);
+    const frame = trafficFrame(base, rel, lateral, G.playerX);
+    window.__tdRectCap = [];
+    sceneSprite(ctx, frame.key, rel, lateral, .5, null, null,
+      trafficFrameOptions(frame.direction, playerWpx() * .92));
+    const drawn = window.__tdRectCap.find(entry => entry.key === frame.key);
+    window.__tdRectCap = null;
+    return { ...frame, rel, lateral, rect:drawn?.rect || null };
+  };
   window.__tdStep = (seconds) => {
     for (let i = 0; i < Math.round(seconds / STEP); i++) update(STEP);
     render();

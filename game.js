@@ -1061,7 +1061,12 @@ function rivalDist(i) {
   return G.playerDist + gap;
 }
 const TRAFFIC_PARTIAL_MAX_REL = 120;
-const TRAFFIC_PARTIAL_MIN_OFFSET = .28;
+// A side-by-side pass can bring the player close to the other car's lane
+// center, especially after collision avoidance. The former .28 threshold
+// (over half a lane) therefore switched back to the tail before the nearby
+// pose was readable on a phone. Keep a small centered dead zone, but expose
+// the authored three-quarter frame for any clearly lateral nearby viewpoint.
+const TRAFFIC_PARTIAL_MIN_OFFSET = .08;
 function rivalLateral(r) {
   return lerp(r.x, r.raceX, clamp(G.playerDist / 120, 0, 1));
 }
