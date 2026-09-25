@@ -292,13 +292,13 @@ function drawSceneRoad(env) {
       // tile: a slow/missing asset degrades to the old fill, never to a
       // hole. Everything stays 100% opaque.
       sceneQuad(ctx,waterQuad,'#0b2230');
-      // Textured path (counted for regression coverage): when the tile asset
-      // is not ready this degrades to the flat base above, never to a hole.
-      // LOD: the projected texture is only worth its clip+transform+drawImage
-      // cost when the quad is tall enough on screen for the tile's detail to
-      // be visible; distant slivers keep the flat base (already drawn above).
-      const waterH=Math.max(Math.abs(waterQuad[2][1]-waterQuad[0][1]),Math.abs(waterQuad[3][1]-waterQuad[1][1]));
-      if (waterH>=10 && imgReady(ART['tile-water-night'])) {
+      // p3d-085: texture every visible projected slice, including the thin
+      // distance slices. The old 10 px LOD cutoff left all farther slices as
+      // one flat horizontal band, visually severing the foreground water from
+      // the horizon. Keeping the same road quad at every depth makes the water
+      // read as one receding plane. If the asset is not ready, the opaque
+      // natural-blue base above remains the safe fallback.
+      if (imgReady(ART['tile-water-night'])) {
         sceneTexture(ctx,'tile-water-night',waterQuad,1,bd);
         sceneEffectsStats.waterTexturedQuads++;
       }
