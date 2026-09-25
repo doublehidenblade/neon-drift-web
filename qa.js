@@ -69,6 +69,38 @@ if (HARNESS) {
   window.__tdPlay = () => { qaFrozen = false; lastT = performance.now(); acc = 0; };
   window.__tdFreeze = () => { qaFrozen = true; };
   window.__tdFrame = () => { render(); return { jobs: jobStats.lastCount, badKey: jobStats.badKey, ...sceneStats }; };
+  // p3d-061: force each authored civilian direction through the production
+  // sprite renderer at one depth. This audits scaling independently from the
+  // p3d-060 selector (which remains the source of truth for normal gameplay).
+  window.__tdSpriteAudit = (base = 'car-sedan', rel = 60) => {
+    window.__tdCapture(460, 'circuit', 0);
+    const directions = ['left', 'straight', 'right'];
+    const laterals = [-.62, 0, .62];
+    const maxWidth = playerWpx() * .92;
+    const nominalWidth = Math.min(projectSprite(rel, 0, 0).w * .5, maxWidth);
+    const measurements = directions.map(direction => {
+      const key = `${base}-${direction}`;
+      const im = ART[key];
+      const nominalHeight = nominalWidth * im.naturalHeight / im.naturalWidth;
+      const draw = carSpriteDraw(key, im, nominalWidth, nominalHeight);
+      return { key, width:draw.w, height:draw.h };
+    });
+    window.__tdRectCap = [];
+    directions.forEach((direction, i) => sceneSprite(ctx, `${base}-${direction}`,
+      rel, laterals[i], .5, null, null, trafficFrameOptions(direction, playerWpx() * .92)));
+    const rects = window.__tdRectCap.map(({key, rect}) => ({
+      key, rect, width:rect[2]-rect[0], height:rect[3]-rect[1],
+    }));
+    window.__tdRectCap = null;
+    return {
+      base, rel, rects, measurements,
+      expectedWidth:nominalWidth * carNormalizedBounds(`${base}-straight`).w,
+      sideBySide: {
+        playerLeft:trafficFrame(base, 60, 0, -.6),
+        playerRight:trafficFrame(base, 60, 0, .6),
+      },
+    };
+  };
   window.__tdStep = (seconds) => {
     for (let i = 0; i < Math.round(seconds / STEP); i++) update(STEP);
     render();

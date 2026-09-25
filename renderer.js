@@ -65,13 +65,26 @@ function carTrimFrac(key) {
   if (!key.startsWith('car-')) return 1;
   const im = ART[key];
   if (!imgReady(im)) return 1;
-  return carTrimArt(key, im).w;
+  return carNormalizedBounds(key).w;
+}
+
+function carNormalizedBounds(key) {
+  const match = key.match(/^(car-(?:sedan|taxi|van|sport))-(?:left|straight|right)$/);
+  const normalizedKey = match ? `${match[1]}-straight` : key;
+  const normalizedImage = ART[normalizedKey];
+  return imgReady(normalizedImage) ? carTrimArt(normalizedKey, normalizedImage)
+    : carTrimArt(key, ART[key]);
 }
 
 function carSpriteDraw(key, im, screenWidth, screenHeight) {
   if (!key.startsWith('car-')) return {im,x:0,y:0,w:screenWidth,h:screenHeight};
   const art=carTrimArt(key,im);
-  const w=screenWidth*art.w,h=screenHeight*art.h;
+  // p3d-061: directional paintings were alpha-trimmed independently in
+  // p3d-058, so drawing each crop at its own bounds made a car change size
+  // when p3d-060 selected another view. Every direction now occupies its
+  // model's straight/rear alpha box, centered on the same bottom pivot.
+  const normalized=carNormalizedBounds(key);
+  const w=screenWidth*normalized.w,h=screenHeight*normalized.h;
   let source=art.source;
   if(w<96){
     if(!art.mip){
@@ -81,8 +94,8 @@ function carSpriteDraw(key, im, screenWidth, screenHeight) {
     source=art.mip;sceneEffectsStats.trafficMipDraws++;
   }
   sceneEffectsStats.trafficTrimmedDraws++;
-  sceneEffectsStats.maxTrafficDrawAreaRatio=Math.max(sceneEffectsStats.maxTrafficDrawAreaRatio,art.w*art.h);
-  return {im:source,x:screenWidth*art.x,y:screenHeight*art.y,w,h};
+  sceneEffectsStats.maxTrafficDrawAreaRatio=Math.max(sceneEffectsStats.maxTrafficDrawAreaRatio,normalized.w*normalized.h);
+  return {im:source,x:(screenWidth-w)/2,y:screenHeight-h,w,h};
 }
 
 function sceneSprite(c, key, rel, lateral, width, height = null, crop = null, options = null) {
