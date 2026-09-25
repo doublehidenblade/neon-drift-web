@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, dirtTexturedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 const sceneSpriteBounds = new Map();
@@ -271,6 +271,13 @@ function drawSceneRoad(env) {
     const profile=roadProfile(bd),roadHalf=profile.halfWidth;
     const bridge = inBridge(bd),sw=sceneWeights(bd);
     const quayRight = inHarbor(bd), quayLeft = inWaterfront(bd);
+    // Scene weights deliberately blend scenery around district boundaries,
+    // but terrain ownership is discrete. Using the blended water weight here
+    // turned entire transition slices blue before they reached a bay. Only an
+    // authored bridge or shoreline may own a water quad; adjacent land stays
+    // land while the surrounding scenery eases in.
+    const waterSurface = bridge || quayRight || quayLeft;
+    if (sw.water > .5 && !waterSurface) sceneEffectsStats.landProtectedQuads++;
     const terrain = env === 'snow' ? '#b5c1cb' : '#25242a';
     const leftOut = bridge ? 1.13 : quayLeft ? 1.65 : 40;
     const rightOut = bridge ? 1.13 : quayRight ? 1.65 : 40;
@@ -280,8 +287,8 @@ function drawSceneRoad(env) {
     // Water is real projected terrain. Each segment maps the painted water
     // tile through the same quad as land/road; world-space wave bands advance
     // along z and therefore converge at the horizon.
-    if(sw.water>.5){
-      const waterQuad=bridge?quad(-40,40):quayRight?quad(1.65,40):quayLeft?quad(-40,-1.65):quad(-40,40);
+    if(waterSurface){
+      const waterQuad=bridge?quad(-40,40):quayRight?quad(1.65,40):quad(-40,-1.65);
       // p3d-065: the old code only ever drew the flat #0b2230/#17364b canvas
       // fill — the painted tile-water-night asset was never used, so water
       // never looked better than flat canvas. The authored tile (night waves
@@ -306,7 +313,7 @@ function drawSceneRoad(env) {
       sceneEffectsStats.waterProjectedQuads++;
     }
     if (b.y - a.y > 2 && !bridge) {
-      if (sw.water > .5) {
+      if (waterSurface) {
         // Docklands' exposed shore is authored dirt, not a canvas color.
         sceneTexture(ctx, 'tile-dirt-night', quad(-leftOut,rightOut), 1, bd);
         sceneEffectsStats.dirtTexturedQuads++;
