@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, horizonSurfaceY:0, horizonExtendedQuads:0, maxHorizonGap:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneCarArt = new Map();
 const sceneSpriteBounds = new Map();
@@ -254,6 +254,7 @@ function drawSceneRoad(env) {
   }
   // Only front-facing road strips can be seen. Hidden descending terrain
   // never paints a second road through the crest in front of it.
+  let horizonPending = true;
   for (let n = DRAW; n >= 1; n--) {
     let yf = projY[n], yn = projY[n - 1];
     if (yf >= runMin[n - 1] || yn <= 0 || yf > H || yn <= yf) continue;
@@ -265,8 +266,22 @@ function drawSceneRoad(env) {
       const t = clamp((y - yf) / (yn - yf), 0, 1);
       return { x: lerp(far.x, near.x, t), w: lerp(far.w, near.w, t), y };
     };
-    const a = bounds(Math.max(0, yf)), b = bounds(Math.min(H + 1, yn));
+    // The farthest visible slice owns the seam with the skyline. On downhill
+    // runs its projected far edge can sit several pixels below HORIZON; if we
+    // start the quad there, the background backplane reads as a void between
+    // the authored land/water plane and the skyline. Extend only that far
+    // edge to the horizon. All later slices retain their true projected edges,
+    // so terrain relief, shoreline ownership and water perspective are intact.
+    const horizonGap = horizonPending ? Math.max(0, yf - HORIZON) : 0;
+    const a = bounds(horizonPending ? Math.min(yf, HORIZON) : Math.max(0, yf));
+    const b = bounds(Math.min(H + 1, yn));
     if (b.y <= a.y) continue;
+    if (horizonPending) {
+      sceneEffectsStats.horizonSurfaceY = +a.y.toFixed(2);
+      sceneEffectsStats.maxHorizonGap = +horizonGap.toFixed(2);
+      if (horizonGap > 0) sceneEffectsStats.horizonExtendedQuads++;
+      horizonPending = false;
+    }
     const bd = G.playerDist + (n - basePct) * SEG_LEN;
     const profile=roadProfile(bd),roadHalf=profile.halfWidth;
     const bridge = inBridge(bd),sw=sceneWeights(bd);
