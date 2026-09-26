@@ -5,8 +5,9 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, horizonSurfaceY:0, horizonExtendedQuads:0, maxHorizonGap:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, textureTileDraws:0, maxTextureRepeatCount:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, horizonSurfaceY:0, horizonExtendedQuads:0, maxHorizonGap:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
+const sceneTextureStrips = new Map();
 const sceneCarArt = new Map();
 const sceneSpriteBounds = new Map();
 // Alpha-visible bounds are the visual-size source of truth for collision QA,
@@ -206,7 +207,7 @@ function scenePresence(weight,seed){
 }
 function sceneSmoothstep(a,b,x){const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);}
 
-function sceneTexture(c, key, points, alpha = 1, worldDistance = G.playerDist, timeOffset = 0) {
+function sceneTexture(c, key, points, alpha = 1, worldDistance = G.playerDist, timeOffset = 0, worldWidth = 0) {
   const im = ART[key];
   if (!imgReady(im)) return;
   // Map a world-distance slice into the projected strip itself. A translated
@@ -223,7 +224,30 @@ function sceneTexture(c, key, points, alpha = 1, worldDistance = G.playerDist, t
   sceneEffectsStats.textureAnchorY=+projectSprite(Math.max(2,anchorWorld-G.playerDist),0,0).y.toFixed(2);
   if(key==='tile-water-night')sceneEffectsStats.waterPhase=+(.5+.5*Math.sin(G.time*Math.PI)).toFixed(3);
   c.save(); c.globalAlpha = alpha;
-  texturedQuad(c,im,points,[0,offset,im.naturalWidth,slice]); c.restore();
+  if (worldWidth > 0) {
+    // p3d-092: terrain used to map one 512 px strip across the entire visible
+    // plane (up to 80 world units), magnifying its horizontal features into a
+    // single smeared band. Concatenate the authored tile at a stable world
+    // width instead. Each repeat retains its source aspect; only the final
+    // partial tile uses the corresponding source fraction.
+    const tileWorldWidth=8,repeats=Math.ceil(worldWidth/tileWorldWidth);
+    sceneEffectsStats.maxTextureRepeatCount=Math.max(sceneEffectsStats.maxTextureRepeatCount,repeats);
+    const stripWidth=Math.max(1,Math.round(im.naturalWidth*worldWidth/tileWorldWidth));
+    const cacheKey=`${key}:${stripWidth}`;
+    let strip=sceneTextureStrips.get(cacheKey);
+    if(!strip){
+      strip=document.createElement('canvas');strip.width=stripWidth;strip.height=im.naturalHeight;
+      const stripContext=strip.getContext('2d');
+      for(let x=0;x<stripWidth;x+=im.naturalWidth)stripContext.drawImage(im,x,0);
+      sceneTextureStrips.set(cacheKey,strip);
+    }
+    // Composite the repeats once, then project the concatenated source in the
+    // same two affine draws as the former single stretched tile. This keeps
+    // the fix bounded on CPU-only/mobile renderers.
+    texturedQuad(c,strip,points,[0,offset,strip.width,slice]);
+    sceneEffectsStats.textureTileDraws+=repeats;
+  } else texturedQuad(c,im,points,[0,offset,im.naturalWidth,slice]);
+  c.restore();
 }
 
 function drawSceneSky(env) {
@@ -321,7 +345,7 @@ function drawSceneRoad(env) {
       // read as one receding plane. If the asset is not ready, the opaque
       // natural-blue base above remains the safe fallback.
       if (imgReady(ART['tile-water-night'])) {
-        sceneTexture(ctx,'tile-water-night',waterQuad,1,bd);
+        sceneTexture(ctx,'tile-water-night',waterQuad,1,bd,0,bridge?80:38.35);
         sceneEffectsStats.waterTexturedQuads++;
       }
       sceneEffectsStats.waterPhase=+(((bd+G.time*12)%100+100)%100).toFixed(2);
@@ -330,11 +354,11 @@ function drawSceneRoad(env) {
     if (b.y - a.y > 2 && !bridge) {
       if (waterSurface) {
         // Docklands' exposed shore is authored dirt, not a canvas color.
-        sceneTexture(ctx, 'tile-dirt-night', quad(-leftOut,rightOut), 1, bd);
+        sceneTexture(ctx, 'tile-dirt-night', quad(-leftOut,rightOut), 1, bd, 0, leftOut+rightOut);
         sceneEffectsStats.dirtTexturedQuads++;
       } else {
-        sceneTexture(ctx, 'tile-concrete-night', quad(-leftOut,rightOut), 1, bd);
-        if (env !== 'snow' && sw.green > .5) sceneTexture(ctx, 'tile-grass-night', quad(-leftOut,rightOut), 1, bd);
+        sceneTexture(ctx, 'tile-concrete-night', quad(-leftOut,rightOut), 1, bd, 0, leftOut+rightOut);
+        if (env !== 'snow' && sw.green > .5) sceneTexture(ctx, 'tile-grass-night', quad(-leftOut,rightOut), 1, bd, 0, leftOut+rightOut);
       }
     }
     // Reusable fork/merge records add a second fully projected drive ribbon.
@@ -559,8 +583,9 @@ function sceneComplexRoadJobs(){
 // Two clipped triangles map an image into a real projected quad. Transform
 // composes with DPR and camera shake; clipping prevents affine overspill.
 function texturedQuad(c, im, p, crop = null) {
-  if (!imgReady(im) || !p.flat().every(Number.isFinite)) return;
-  const source = crop || [0,0,im.naturalWidth,im.naturalHeight];
+  const sourceWidth=im.naturalWidth||im.width,sourceHeight=im.naturalHeight||im.height;
+  if (!sourceWidth || !sourceHeight || !p.flat().every(Number.isFinite)) return;
+  const source = crop || [0,0,sourceWidth,sourceHeight];
   const tri = (a,b,d,u0,v0,u1,v1,u2,v2) => {
     const det=(u1-u0)*(v2-v0)-(u2-u0)*(v1-v0);
     if (Math.abs(det)<.001) return;
