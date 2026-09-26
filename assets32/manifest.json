@@ -521,6 +521,14 @@
         220
       ],
       "bytes": 15702
+    },
+    {
+      "file": "assets32/arch-bridge-night.webp",
+      "size": [
+        1024,
+        576
+      ],
+      "bytes": 620408
     }
   ]
 }

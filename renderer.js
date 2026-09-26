@@ -5,7 +5,7 @@
  */
 'use strict';
 const sceneStats = { sprites: 0, culled: 0, invalid: 0 };
-const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, textureTileDraws:0, maxTextureRepeatCount:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, horizonSurfaceY:0, horizonExtendedQuads:0, maxHorizonGap:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
+const sceneEffectsStats = { lamps:0, rightLamps:0, lightPools:0, shadows:0, shearedCars:0, rotatedCars:0, maxTrafficRotation:0, trafficFramesLeft:0, trafficFramesStraight:0, trafficFramesRight:0, trafficMipDraws:0, trafficTrimmedDraws:0, maxTrafficDrawAreaRatio:0, maxStraightAnchorError:0, maxTrafficPlayerRatio:0, bridgeMemberMinPx:999, opaqueWorldFaces:0, texturedBuildingFaces:0, texturedWallFaces:0, portalTexturedFaces:0, archBridgeFaces:0, tunnelRibs:0, tunnelLights:0, tunnelWallSegments:0, tunnelApproachVisible:0, tunnelWallGap:0, textureOffset:0, textureAnchorWorld:0, textureAnchorY:0, textureTileDraws:0, maxTextureRepeatCount:0, waterPhase:0, waterProjectedQuads:0, waterTexturedQuads:0, waterHorizonFills:0, horizonSurfaceY:0, horizonExtendedQuads:0, maxHorizonGap:0, dirtTexturedQuads:0, landProtectedQuads:0, portalBaseError:0, treeWorldGap:999, complexBranchStrips:0, overpassDecks:0, featureSigns:0 };
 const sceneFaceArt = new Map();
 const sceneTextureStrips = new Map();
 const sceneCarArt = new Map();
@@ -676,6 +676,7 @@ function sceneTunnelJobs() {
   const first=Math.floor(G.playerDist/SEG_LEN)*SEG_LEN;
   const approach=tunnelZones().find(([a])=>G.playerDist<a&&G.playerDist>a-600);
   for (let bd=first;bd<G.playerDist+1500;bd+=SEG_LEN) {
+    if(G.track==='circuit')continue;
     // An outside viewer sees the continuous shell through the entrance's
     // projected aperture. Previously the entire interior popped into being
     // only 45 m before the mouth, which is the phone-visible discontinuity.
@@ -716,33 +717,53 @@ function sceneTunnelJobs() {
     // Approach vegetation is independent world geometry. It establishes the
     // mountain cut over hundreds of metres instead of asking one billboard to
     // materialize an entire biome at the portal plane.
-    for(let d=a-430;d<a-35;d+=55){
+    for(let d=a-430;G.track!=='circuit'&&d<a-35;d+=55){
       const rel=d-G.playerDist;if(rel<=2||rel>1500)continue;
       const seed=Math.floor(d/55);
       for(const side of [-1,1])pushJob(rel,c=>sceneSprite(c,seed%2?'tree-pine':'tree-broad',rel,side*(1.45+hash01(seed)*.42),.48+.12*hash01(seed+3),.74+.2*hash01(seed+5)));
     }
     // Entrance and exit use the same opaque projected frame. Its base shares
     // the road plane exactly; wing walls connect into roadside terrain.
-    for(const mouth of [a,b]){const rel=mouth-G.playerDist;if(rel>3&&rel<1500)pushJob(rel,c=>{
+    const mouths=G.track==='circuit'?[a]:[a,b];
+    for(const mouth of mouths){const rel=mouth-G.playerDist;if(rel>3&&rel<1500)pushJob(rel,c=>{
       const il=projectSprite(rel,-1.12,0),ir=projectSprite(rel,1.12,0),it=projectSprite(rel,0,-2.35);
       const ol=projectSprite(rel,-1.75,0),or=projectSprite(rel,1.75,0),ot=projectSprite(rel,0,-2.72);
       sceneEffectsStats.portalBaseError=Math.max(sceneEffectsStats.portalBaseError,Math.abs(il.y-projectSprite(rel,-1.12,0).y),Math.abs(ir.y-projectSprite(rel,1.12,0).y));
-      texturedQuad(c,im,[[ol.x,ot.y],[il.x,it.y],[il.x,il.y],[ol.x,ol.y]]);
-      texturedQuad(c,im,[[ir.x,it.y],[or.x,ot.y],[or.x,or.y],[ir.x,ir.y]]);
-      texturedQuad(c,roof,[[ol.x,ot.y],[or.x,ot.y],[ir.x,it.y],[il.x,it.y]]);
+      if(G.track!=='circuit'){
+        texturedQuad(c,im,[[ol.x,ot.y],[il.x,it.y],[il.x,il.y],[ol.x,ol.y]]);
+        texturedQuad(c,im,[[ir.x,it.y],[or.x,ot.y],[or.x,or.y],[ir.x,ir.y]]);
+        texturedQuad(c,roof,[[ol.x,ot.y],[or.x,ot.y],[ir.x,it.y],[il.x,it.y]]);
+      }
       const wl=projectSprite(rel,-3.2,0),wr=projectSprite(rel,3.2,0);
       const wlt=projectSprite(rel,-3.2,-1.55),wrt=projectSprite(rel,3.2,-1.55);
-      const portal=ART['tunnel-portal-night'];
+      const portal=ART[G.track==='circuit'?'arch-bridge-night':'tunnel-portal-night'];
       const leftWing=[[wlt.x,wlt.y],[ol.x,ot.y],[ol.x,ol.y],[wl.x,wl.y]];
       const rightWing=[[or.x,ot.y],[wrt.x,wrt.y],[wr.x,wr.y],[or.x,or.y]];
-      if(imgReady(portal)){
+      if(G.track==='circuit'&&imgReady(portal)){
+        // The source is a fully opaque, exactly mirrored painting. Cut its
+        // road aperture at render time rather than shipping alpha: the outer
+        // rectangle, semicircular arch and both abutments stay one sprite.
+        const bridgeLeft=projectSprite(rel,-1.82,0),bridgeRight=projectSprite(rel,1.82,0);
+        const topY=projectSprite(rel,0,-2.82).y,bottomY=bridgeLeft.y;
+        const structureTop=topY+(bottomY-topY)*.11;
+        c.save();c.beginPath();
+        c.rect(bridgeLeft.x,structureTop,bridgeRight.x-bridgeLeft.x,bottomY-structureTop);
+        c.moveTo(il.x,bottomY);
+        c.lineTo(il.x,it.y+(bottomY-it.y)*.42);
+        c.bezierCurveTo(il.x,it.y,ir.x,it.y,ir.x,it.y+(bottomY-it.y)*.42);
+        c.lineTo(ir.x,bottomY);c.closePath();
+        c.clip('evenodd');
+        c.drawImage(portal,bridgeLeft.x,topY,bridgeRight.x-bridgeLeft.x,bottomY-topY);
+        c.restore();
+        sceneEffectsStats.archBridgeFaces++;
+      }else if(imgReady(portal)){
         const pw=portal.naturalWidth,ph=portal.naturalHeight;
         texturedQuad(c,portal,leftWing,[0,0,pw*.38,ph]);
         texturedQuad(c,portal,rightWing,[pw*.62,0,pw*.38,ph]);
       }else{
         texturedQuad(c,im,leftWing);texturedQuad(c,im,rightWing);
       }
-      sceneEffectsStats.portalTexturedFaces+=2;
+      sceneEffectsStats.portalTexturedFaces+=G.track==='circuit'?0:2;
     });}
   }
 }

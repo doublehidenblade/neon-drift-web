@@ -322,7 +322,10 @@ buildTrackData('circuit');
  * ribs — always lit, never black (BUG-021). p3d-026 rebuilt it: the old
  * 1.15-high walls read as see-through and the ceiling center slab read as
  * a giant flashing blue strip (Craig 2026-09-20). */
-const CIRCUIT_TUNNEL_A = 1880, CIRCUIT_TUNNEL_B = 2180;
+// p3d-075: this is deliberately a 50 m bridge underpass, not a tunnel bored
+// into an absent hill. Longer landscape tunnels remain authored on the other
+// tracks; a genuine circuit hill tunnel is separate later work.
+const CIRCUIT_TUNNEL_A = 1880, CIRCUIT_TUNNEL_B = 1930;
 function inTunnel(d) {
   // p3d-002 set-piece discipline: the NEON CIRCUIT keeps the red torii
   // start/finish gantry as its signature set-piece (p3d-015 added the
@@ -784,8 +787,8 @@ function sceneWeights(d){
   const cached=sceneWeightCache.get(key);if(cached)return cached;
   const water=zoneCoverage(x=>inBridge(x)||inHarbor(x)||inWaterfront(x),q,180,12);
   const green=zoneCoverage(x=>inClimb(x)||inPark(x),q,180,12);
-  let tunnel=zoneCoverage(inTunnel,q,120,12);
-  for(const [a,b] of tunnelZones()){
+  let tunnel=G.track==='circuit'?0:zoneCoverage(inTunnel,q,120,12);
+  for(const [a,b] of G.track==='circuit'?[]:tunnelZones()){
     if(q<a&&q>a-520)tunnel=Math.max(tunnel,clamp((q-(a-520))/420,0,1));
     if(q>=a&&q<=b)tunnel=1;
     if(q>b&&q<b+380)tunnel=Math.max(tunnel,1-clamp((q-b)/380,0,1));
@@ -795,6 +798,7 @@ function sceneWeights(d){
   return result;
 }
 function tunnelContext(d){
+  if(G.track==='circuit')return {approach:0,exit:0};
   let approach=0,exit=0;
   for(const [a,b] of tunnelZones()){
     if(d<a&&d>a-650)approach=Math.max(approach,clamp((d-(a-650))/500,0,1));
@@ -870,6 +874,7 @@ function tunnelBlend(d) {
   // across ~250m after each exit — walls, ceiling, darkness and the roadside
   // scenery hand off smoothly instead of hard-cutting at the portal.
   // (Craig 2026-09-17: "tunnel is starting and ending abruptly".)
+  if(G.track==='circuit')return 0;
   const R = 250;
   let b = 0;
   for (const [a, z] of tunnelZones()) {
@@ -2010,6 +2015,7 @@ const ART_FILES = {
   'tile-tunnel-wall': 'tile-tunnel-wall.webp',
   'tile-tunnel-ceiling': 'tile-tunnel-ceiling.webp', // p3d-033 (ART-002): AI tunnel ceiling
   'tunnel-portal-night': 'tunnel-portal-night.webp',
+  'arch-bridge-night': 'arch-bridge-night.webp',
   'tunnel-hill-night': 'tunnel-hill-night.webp',
   'bridge-vista-night': 'bridge-vista-night.webp',
   'sky-night-band': 'sky-night-band.webp',
