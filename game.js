@@ -1067,8 +1067,9 @@ const TRAFFIC_PARTIAL_MAX_REL = 120;
 // pose was readable on a phone. Keep a small centered dead zone, but expose
 // the authored three-quarter frame for any clearly lateral nearby viewpoint.
 const TRAFFIC_PARTIAL_MIN_OFFSET = .08;
-function rivalLateral(r) {
-  return lerp(r.x, r.raceX, clamp(G.playerDist / 120, 0, 1));
+function rivalLateral(r, d = null) {
+  const lane = lerp(r.x, r.raceX, clamp(G.playerDist / 120, 0, 1));
+  return lane + (d == null ? 0 : aiObstacleDodge(d, lane, r.i ?? 0));
 }
 function trafficFrame(base,rel,lateral,playerLateral=G.playerX) {
   // The camera/player's view of another car depends on their relative pose,
@@ -1088,10 +1089,10 @@ function trafficFrameOptions(direction,maxScreenWidth) {
 const RIVAL_CARS = ['car-sport','car-sedan','car-taxi','car-van'];
 function rivalJobs() {
   G.rivals.forEach((r, i) => {
-    const rel = rivalDist(i) - G.playerDist;
+    const d = rivalDist(i), rel = d - G.playerDist;
     if (rel < RIVAL_PASS_REL || rel > 1800) return;
     const cars = ['car-sport','car-sedan','car-taxi','car-van'];
-    const x=rivalLateral(r);
+    const x=rivalLateral(r, d);
     const frame=trafficFrame(cars[i % cars.length],rel,x);
     pushJob(rel, c => sceneSprite(c, frame.key, rel, x, 0.5, null, null,
       trafficFrameOptions(frame.direction,playerWpx()*.92)));
@@ -1156,11 +1157,39 @@ function civilianState(o) {
   }
   return state;
 }
+
+// Look ahead for intact fixed props in an AI car's path and describe a smooth
+// lane change around the nearest one. Side-lane cars move inward; a centered
+// car picks a stable side from its id. The envelope begins well before visual
+// contact and rejoins the authored lane after the prop, so this reads as a
+// deliberate dodge rather than a collision teleport.
+function aiObstacleDodge(d, lane, id = 0) {
+  let nearest = null;
+  const b0 = Math.floor((d - 20) / OB_STEP), b1 = Math.floor((d + 85) / OB_STEP);
+  for (let b = b0; b <= b1; b++) for (const o of obstacleBlocks(b * OB_STEP)) {
+    if (o.type === 'car' || propHits.has(civilianKey(o))) continue;
+    const ahead = o.d - d;
+    if (ahead < -14 || ahead > 80 || Math.abs(o.lane - lane) > .43) continue;
+    if (!nearest || ahead < nearest.ahead) nearest = { o, ahead };
+  }
+  if (!nearest) return 0;
+  const side = lane > .2 ? -1 : lane < -.2 ? 1 : (hash01(Number(id) * 3.17 + 9) < .5 ? -1 : 1);
+  const approach = clamp((80 - nearest.ahead) / 32, 0, 1);
+  const depart = clamp((nearest.ahead + 14) / 24, 0, 1);
+  const eased = Math.min(approach * approach * (3 - 2 * approach), depart * depart * (3 - 2 * depart));
+  const room = side > 0 ? .82 - lane : lane + .82;
+  return side * Math.min(.48, Math.max(0, room)) * eased;
+}
 function obstacleDist(o) {
   if (o.type !== 'car') return o.d;
   return o.d + TUNE.trafficSpeed * G.raceTime + civilianState(o).dOffset;
 }
-function obstacleLane(o) { return o.lane + (o.type === 'car' ? civilianState(o).laneOffset : 0); }
+function obstacleLane(o) {
+  if (o.type !== 'car') return o.lane;
+  const d = obstacleDist(o);
+  const lane = o.lane + civilianState(o).laneOffset;
+  return lane + aiObstacleDodge(d, lane, o.seed);
+}
 
 // Swept circle/box-style response in road coordinates. This is deliberately
 // independent of rendering so the deterministic harness can exercise
@@ -1214,8 +1243,11 @@ function updateCivilianCollisions(dt) {
     if (o.type !== 'car') return { id: civilianKey(o), source: o, fixed: true, d: o.d, x: o.lane,
       vd: 0, vx: 0, halfWidth: obstacleCollisionHalfRoad(o), halfDepth: o.type === 'barrier' ? 1.3 : 0.8 };
     const state = civilianState(o);
-    return { id: civilianKey(o), source: o, fixed: false, d: obstacleDist(o) - TUNE.trafficSpeed * dt,
-      x: obstacleLane(o), vd: TUNE.trafficSpeed + state.forwardVelocity,
+    const d = obstacleDist(o) - TUNE.trafficSpeed * dt;
+    const lane = o.lane + state.laneOffset;
+    const dodge = aiObstacleDodge(d, lane, o.seed);
+    return { id: civilianKey(o), source: o, fixed: false, d, x: lane + dodge, dodge,
+      vd: TUNE.trafficSpeed + state.forwardVelocity,
       vx: state.lateralVelocity, halfWidth: obstacleCollisionHalfRoad(o), halfDepth: CIVILIAN_DEPTH_HALF };
   });
   const contacts = resolveCivilianContacts(bodies, dt);
@@ -1231,7 +1263,7 @@ function updateCivilianCollisions(dt) {
     const state = civilianState(body.source);
     const base = body.source.d + TUNE.trafficSpeed * G.raceTime;
     state.dOffset = body.d - base;
-    state.laneOffset = clamp(body.x - body.source.lane, -0.72, 0.72);
+    state.laneOffset = clamp(body.x - body.source.lane - (body.dodge || 0), -0.72, 0.72);
     state.forwardVelocity = body.vd - TUNE.trafficSpeed;
     state.lateralVelocity = body.vx;
     // After a deflection, smoothly regain authored traffic speed. This does
@@ -1364,10 +1396,10 @@ function checkRivalBump(dt) {
   const cRel = contactRel();
   for (let i = 0; i < G.rivals.length; i++) {
     const r = G.rivals[i];
-    const rel = rivalDist(i) - G.playerDist;
+    const d = rivalDist(i), rel = d - G.playerDist;
     if (Math.abs(rel - cRel) > 6) continue;
     const pass = clamp(1 - Math.abs(rel - 12) / 45, 0, 1);
-    const x=rivalLateral(r);
+    const x=rivalLateral(r, d);
     const side = x >= 0 ? 1 : -1;
     const rx = x + side * pass * 0.28;
     const cars = ['car-sport','car-sedan','car-taxi','car-van'];
@@ -2257,6 +2289,11 @@ if (HARNESS) {
     impact:G.impact?{...G.impact}:null, crossTraffic:crossTrafficState(),
   });
   window.__tdTrafficFrame = (base,rel,lateral,playerLateral) => trafficFrame(base,rel,lateral,playerLateral);
+  window.__tdAiObstacleProbe = () => ({
+    far: aiObstacleDodge(4970, .55, 20),
+    approaching: aiObstacleDodge(5010, .55, 20),
+    cleared: aiObstacleDodge(5075, .55, 20),
+  });
   window.__tdCivilianCollisionProbe = (kind, speed = TUNE.nitroSpeed) => {
     const bodies = kind === 'car-car'
       ? [

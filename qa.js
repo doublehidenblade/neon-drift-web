@@ -66,6 +66,28 @@ if (HARNESS) {
     }
     throw new Error(`No ${type} collision fixture found`);
   };
+  // p3d-094: a real generated civilian and barrier, brought into one
+  // deterministic encounter for matched before/after camera captures.
+  // Salvaged from the fix/p3d-094-ai-obstacle-awareness attempt (2026-09-26):
+  // harness-only, no game behavior change.
+  window.__tdAIObstacleFixture = () => {
+    let prop, car;
+    for (let d = 460; d < LAP_LEN && !prop; d += OB_STEP)
+      prop = obstacleBlocks(d).find(o => o.type === 'barrier' && Math.abs(o.lane) < .1);
+    if (!prop) throw new Error('No center-lane barrier fixture');
+    for (let d = Math.max(460, prop.d - 230); d < Math.min(LAP_LEN, prop.d + 1200) && !car; d += OB_STEP)
+      car = obstacleBlocks(d).find(o => o.type === 'car');
+    if (!car) throw new Error('No nearby civilian fixture');
+    window.__tdCapture(prop.d - 130, 'circuit', -.55);
+    G.state = 'racing'; G.speedMs = 0;
+    const state = civilianState(car);
+    state.dOffset = prop.d - 60 - car.d;
+    state.laneOffset = prop.lane - car.lane;
+    state.forwardVelocity = 0; state.lateralVelocity = 0;
+    render();
+    return { prop: {d:prop.d,lane:prop.lane,type:prop.type},
+      car: {seed:car.seed,d:obstacleDist(car),lane:obstacleLane(car)} };
+  };
   window.__tdPlay = () => { qaFrozen = false; lastT = performance.now(); acc = 0; };
   window.__tdFreeze = () => { qaFrozen = true; };
   window.__tdFrame = () => { render(); return { jobs: jobStats.lastCount, badKey: jobStats.badKey, ...sceneStats }; };
